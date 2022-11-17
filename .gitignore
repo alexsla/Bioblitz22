@@ -37,3 +37,9 @@ vignettes/*.pdf
 
 # R Environment Variables
 .Renviron
+
+# Figures and data
+/outputs
+/data
+/phylopic
+/SpatialData
