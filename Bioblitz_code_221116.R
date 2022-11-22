@@ -443,6 +443,73 @@ for (i in councils){
 }
 
 ## GENERATE FANCY LGA + COMMON SPECIES PIECHART MAPS
+calc_angles <- function(data){
+  data <- as.numeric(data)
+  angle_each <- 360/sum(data)
+  angle_group <- data * angle_each 
+  return(cumsum(angle_group))
+}
+
+plot_pie_map <- function(p_map, dat, bb_palette, scale.fact){
+  library(grImport2)
+  library(rphylopic)
+  
+  # rsvg::rsvg_png("phylopic/Arachnids.svg", "phylopic/Arachnids.png", height = 128)
+  # rsvg::rsvg_png("phylopic/Birds.svg", "phylopic/Birds.png", height = 128)
+  # rsvg::rsvg_png("phylopic/Cartilaginous fishes.svg", "phylopic/Cartilaginous fishes.png", height = 128)
+  # rsvg::rsvg_png("phylopic/Frogs.svg", "phylopic/Frogs.png", height = 128)
+  # rsvg::rsvg_png("phylopic/Fungi.svg", "phylopic/Fungi.png", height = 128)
+  # rsvg::rsvg_png("phylopic/Arachnids.svg", "phylopic/Arachnids.png", height = 128)
+  # rsvg::rsvg_png("phylopic/Insects.svg", "phylopic/Insects.png", height = 128)
+  # rsvg::rsvg_png("phylopic/Lampreys.svg", "phylopic/Lampreys.png", height = 128)
+  # rsvg::rsvg_png("phylopic/Mammals.svg", "phylopic/Mammals.png", height = 128)
+  # rsvg::rsvg_png("phylopic/Other invertebrates.svg", "phylopic/Other invertebrates.png", height = 128)
+  # rsvg::rsvg_png("phylopic/Plants.svg", "phylopic/Plants.png", height = 128)
+  # rsvg::rsvg_png("phylopic/Ray-finned fishes.svg", "phylopic/Ray-finned fishes.png", height = 128)
+  # rsvg::rsvg_png("phylopic/Reptiles.svg", "phylopic/Reptiles.png", height = 128)
+  
+  phylopics <- list(Arachnids = png::readPNG("phylopic/Arachnids.png"),
+                    Birds = png::readPNG("phylopic/Birds.png"),
+                    `Cartilaginous fishes` = png::readPNG("phylopic/Cartilaginous fishes.png"),
+                    Frogs = png::readPNG("phylopic/Frogs.png"),
+                    Fungi = png::readPNG("phylopic/Fungi.png"),
+                    Insects = png::readPNG("phylopic/Insects.png"),
+                    Lampreys = png::readPNG("phylopic/Lampreys.png"),
+                    Mammals = png::readPNG("phylopic/Mammals.png"),
+                    `Other invertebrates` = png::readPNG("phylopic/Other invertebrates.png"),
+                    Plants = png::readPNG("phylopic/Plants.png"),
+                    `Ray-finned fishes` = png::readPNG("phylopic/Ray-finned fishes.png"),
+                    Reptiles = png::readPNG("phylopic/Reptiles.png"))
+  
+  coords_ALL <- dat[1, c("X", "Y")]
+  
+  radius_ALL <- as.numeric(p_map$layers[[2]]$data[1, 4])*scale.fact + 1500
+  
+  angles_ALL <- calc_angles(dat[1, bb_palette$maingroup])
+  
+  angles_ALL <- (angles_ALL + replace_na(lag(angles_ALL), 0))/2
+  
+  bb_palette <- bb_palette %>%
+    mutate(angle = angles_ALL,
+           x = coords_ALL$X + radius_ALL * sin(pi * 2 * angle/360),
+           y = coords_ALL$Y + radius_ALL * cos(pi * 2 * angle/360))
+  
+  groups <- colSums(dat[, bb_palette$maingroup])
+  groups <- names(groups[which(groups > 0)])
+  
+  for (i in groups){
+    p_map <- p_map +
+      add_phylopic(phylopics[[i]],
+                   x = as.numeric(filter(bb_palette, maingroup == i)[,4]),
+                   y = as.numeric(filter(bb_palette, maingroup == i)[,5]),
+                   ysize = 2000,
+                   color = as.character(filter(bb_palette, maingroup == i)[,2]),
+                   alpha = 1)
+  }
+  
+  return(p_map)
+}
+
 Common.group_all <- lapply(dir("outputs/Table 8", full.names = T), read_csv)
 
 Common.group_Nrecords <- bind_rows(lapply(1:length(councils),
@@ -470,24 +537,29 @@ Common.group_Nsp <- bind_rows(lapply(1:length(councils),
 no_zero_groups <- colSums(Common.group_Nrecords[, bb_palette$maingroup])
 no_zero_groups <- no_zero_groups[which(no_zero_groups > 0)]
 
-map_LGA %>%
-  ggplot() +
-  geom_sf(fill = "white", colour = "dark grey", inherit.aes = F) +
-  geom_scatterpie(aes(x = X, y = Y, group = council, r = r/1.5),
-                  data = Common.group_Nrecords %>%
-                    mutate(r = rowSums(Common.group_Nrecords[, bb_palette$maingroup])),
-                  cols = bb_palette$maingroup, color = NA) +
-  theme_bw() +
-  scale_fill_manual(values = as.character(bb_palette %>%
-                                            filter(maingroup %in% names(no_zero_groups)) %>%
-                                            select(col) %>%
-                                            as_vector()),
-                    name = "Group") +
-  geom_scatterpie_legend(rowSums(Common.group_Nrecords[, bb_palette$maingroup])/3,
-                         x = max(LGA_coords$X)+20000,
-                         y = min(LGA_coords$Y)-5000,
-                         labeller = function(x) x*1.5) +
-  ggtitle("Bioblitz 2021 No. observations")
+plot_pie_map(p_map = map_LGA %>%
+               ggplot() +
+               geom_sf(fill = "white", colour = "dark grey", inherit.aes = F) +
+               geom_scatterpie(aes(x = X, y = Y, group = council, r = r/1.5),
+                               data = Common.group_Nrecords %>%
+                                 mutate(r = rowSums(Common.group_Nrecords[, bb_palette$maingroup])),
+                               cols = bb_palette$maingroup, color = NA) +
+               theme_bw() +
+               scale_fill_manual(values = as.character(bb_palette %>%
+                                                         filter(maingroup %in% names(no_zero_groups)) %>%
+                                                         select(col) %>%
+                                                         as_vector()),
+                                 name = "Group") +
+               geom_scatterpie_legend(rowSums(Common.group_Nrecords[, bb_palette$maingroup])/3,
+                                      x = max(LGA_coords$X)+20000,
+                                      y = min(LGA_coords$Y)-5000,
+                                      labeller = function(x) x*1.5) +
+               labs(title = "Bioblitz 2021 No. observations",
+                    x = "Longitude",
+                    y = "Latitude"),
+             dat = Common.group_Nrecords,
+             bb_palette = bb_palette,
+             scale.fact = 1/1.5)
 
 ggsave(paste0("outputs/Maps/Common_groups_Nrecords.jpg"), 
        width = 2000,
@@ -495,24 +567,29 @@ ggsave(paste0("outputs/Maps/Common_groups_Nrecords.jpg"),
        units = "px",
        dpi = 300)
 
-map_LGA %>%
-  ggplot() +
-  geom_sf(fill = "white", colour = "dark grey", inherit.aes = F) +
-  geom_scatterpie(aes(x = X, y = Y, group = council, r = r*4),
-                  data = Common.group_Nsp %>%
-                    mutate(r = rowSums(Common.group_Nsp[, bb_palette$maingroup])),
-                  cols = bb_palette$maingroup, color = NA) +
-  theme_bw() +
-  scale_fill_manual(values = as.character(bb_palette %>%
-                                            filter(maingroup %in% names(no_zero_groups)) %>%
-                                            select(col) %>%
-                                            as_vector()),
-                    name = "Group") +
-  geom_scatterpie_legend(rowSums(Common.group_Nsp[, bb_palette$maingroup])*4,
-                         x = max(LGA_coords$X)+20000,
-                         y = min(LGA_coords$Y)-5000,
-                         labeller = function(x) round(x/4, - 1)) +
-  ggtitle("Bioblitz 2021 No. species")
+plot_pie_map(p_map = map_LGA %>%
+               ggplot() +
+               geom_sf(fill = "white", colour = "dark grey", inherit.aes = F) +
+               geom_scatterpie(aes(x = X, y = Y, group = council, r = r*4),
+                               data = Common.group_Nsp %>%
+                                 mutate(r = rowSums(Common.group_Nsp[, bb_palette$maingroup])),
+                               cols = bb_palette$maingroup, color = NA) +
+               theme_bw() +
+               scale_fill_manual(values = as.character(bb_palette %>%
+                                                         filter(maingroup %in% names(no_zero_groups)) %>%
+                                                         select(col) %>%
+                                                         as_vector()),
+                                 name = "Group") +
+               geom_scatterpie_legend(rowSums(Common.group_Nsp[, bb_palette$maingroup])*4,
+                                      x = max(LGA_coords$X)+20000,
+                                      y = min(LGA_coords$Y)-5000,
+                                      labeller = function(x) round(x/4, - 1)) +
+               labs(title = "Bioblitz 2021 No. species",
+                    x = "Longitude",
+                    y = "Latitude"),
+             dat = Common.group_Nsp,
+             bb_palette = bb_palette,
+             scale.fact = 4)
 
 ggsave(paste0("outputs/Maps/Common_groups_Nsp.jpg"), 
        width = 2000,
