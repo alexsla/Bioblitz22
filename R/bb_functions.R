@@ -399,33 +399,43 @@ Map.p <- function(dat, grid_dat, occ_dat, basemap, path, i, period, type = "Nrec
       coord_sf(xlim = st_bbox(grid_dat)[c(1,3)],
                ylim = st_bbox(grid_dat)[c(2,4)]) +
       ggtitle(str_to_title(period))
+    
+    ggsave(paste0(path, "/", type, "_", i, "_", period, ".jpg"),
+           plot = p,
+           width = 2000,
+           height = 1500,
+           units = "px",
+           dpi = 300)
   } else if(type == "Ndensity") {
-    kde <- st_kde(dat %>%
+    kde <- tryCatch(st_kde(dat %>%
                     filter(record_period == period) %>%
                     select(locality, decimalLatitude, decimalLongitude, identifiedBy, recordID, record_period, keep, maingroup) %>%
                     st_as_sf(coords = c("decimalLongitude", "decimalLatitude"), crs = 7844) %>%
-                    st_transform(crs = 3112))
+                    st_transform(crs = 3112)),
+                    error = function(e) e)
     
-    p <- kde %>%
-      ggplot() +
-      geom_sf(data = map_LGA, fill = "white", colour = "dark grey", inherit.aes = F) +
-      geom_sf(data = kde$sf %>%
-                filter(contlabel %in% c(5, 25, 50, 75, 95)) %>%
-                mutate(contlabel = factor(contlabel, levels = c(95, 75, 50, 25, 5))),
-              aes(fill = label_percent(contlabel)), colour = NA, alpha = .8) +
-      scale_fill_viridis_d(na.value = NA, option = "plasma", name = type) +
-      theme_bw() +
-      coord_sf(xlim = st_bbox(grid_dat)[c(1,3)],
-               ylim = st_bbox(grid_dat)[c(2,4)]) +
-      ggtitle(str_to_title(period))
+    if(!inherits(kde, "error")){
+      p <- kde %>%
+        ggplot() +
+        geom_sf(data = map_LGA, fill = "white", colour = "dark grey", inherit.aes = F) +
+        geom_sf(data = kde$sf %>%
+                  filter(contlabel %in% c(5, 25, 50, 75, 95)) %>%
+                  mutate(contlabel = factor(contlabel, levels = c(95, 75, 50, 25, 5))),
+                aes(fill = label_percent(contlabel)), colour = NA, alpha = .8) +
+        scale_fill_viridis_d(na.value = NA, option = "plasma", name = type) +
+        theme_bw() +
+        coord_sf(xlim = st_bbox(grid_dat)[c(1,3)],
+                 ylim = st_bbox(grid_dat)[c(2,4)]) +
+        ggtitle(str_to_title(period))
+      
+      ggsave(paste0(path, "/", type, "_", i, "_", period, ".jpg"),
+             plot = p,
+             width = 2000,
+             height = 1500,
+             units = "px",
+             dpi = 300)
+    }
   } else stop("type should be `Nrecords` or `Ndensity`")
-  
-  ggsave(paste0(path, "/", type, "_", i, "_", period, ".jpg"),
-         plot = p,
-         width = 2000,
-         height = 1500,
-         units = "px",
-         dpi = 300)
 }
 
 ## Function to generate greenspace map (either heatmap or point locality)
