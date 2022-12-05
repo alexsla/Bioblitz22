@@ -43,3 +43,6 @@ vignettes/*.pdf
 /data
 /phylopic
 /SpatialData
+
+# pdf files
+*.pdf
