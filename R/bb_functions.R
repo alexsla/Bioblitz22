@@ -198,6 +198,39 @@ Nrecords.PAR <- function(dat, path, i){
   write_csv(dat, paste0(path, "/BBparticipants_", i, ".csv"), na = "")
 }
 
+### Function to generate summary table of participant types
+BBparticipants_type <- function(dat, participants, path, i){
+  dat <-
+    dat %>%
+    filter(record_period == "bb21") %>%
+    left_join(participants, by = c("identifiedBy" = "Participant_username"))
+  
+  dat_Nrecords <- bind_rows(dat %>%
+                              count(Participant_type) %>%
+                              drop_na(),
+                            dat %>%
+                              count(BBorganiser_type) %>%
+                              drop_na()) %>%
+    rename(Nrecords_BB = n)
+  
+  dat_Nsp <- bind_rows(dat %>%
+                         select(Participant_type, morphospecies) %>%
+                         unique() %>%
+                         count(Participant_type) %>%
+                         drop_na(),
+                       dat %>%
+                         select(BBorganiser_type, morphospecies) %>%
+                         unique() %>%
+                         count(BBorganiser_type) %>%
+                         drop_na()) %>%
+    rename(Nsp_BB = n)
+  
+  dat <- full_join(dat_Nrecords, dat_Nsp) %>%
+    select(Participant_type, BBorganiser_type, Nrecords_BB, Nsp_BB)
+  
+  write_csv(dat, paste0(path, "/BBparticipants_type_", i, ".csv"), na = "")
+}
+
 ### Function to generate summary table of binned participants
 BBparticipants_bin <- function(dat, path, i){
   dat <-
@@ -316,6 +349,46 @@ Common.group.p <- function(file, path, i, group, count, palette, percent = FALSE
   }
 }
 
+### Function to plot participant type lollipop plot
+Participant.p <- function(file, path, i){
+  dat <- read_csv(file) %>%
+    mutate(y = case_when(Participant_type == "General public" ~ Participant_type,
+                         BBorganiser_type == "Council staff" ~ "BB organiser - Council",
+                         BBorganiser_type == "Members of supporting associations" ~ "BB organiser - Supporting")) %>%
+    select(y, Nrecords_BB, Nsp_BB) %>%
+    drop_na() %>%
+    gather(type, count, -y) %>%
+    group_by(type) %>%
+    mutate(perc = (count / sum(count)) * 100,
+           type = factor(type,
+                         levels = c("Nrecords_BB", "Nsp_BB"),
+                         labels = c("Observations", "Species"))) %>%
+    arrange(desc(perc))
+  
+  p <- dat %>%
+    ggplot(aes(x = y, y = perc, colour = type)) +
+    geom_linerange(aes(x = y, ymin = 0, ymax = perc), lwd = 1, position = position_dodge2(width = 1, reverse = T)) +
+    coord_flip() +
+    theme_bw() +
+    ylim(0, 100) +
+    labs(x = "",
+         y = "% of records",
+         colour = "") +
+    scale_colour_manual(values = c("deepskyblue2", "red")) +
+    geom_point(shape = 21, fill = "purple", size = 3, position = position_dodge2(width = 1, reverse = T)) + 
+    geom_text(aes(label = count, group = type, y = perc + 5),
+              colour = "black", size = 3,
+              position = position_dodge2(width = 1, reverse = T)) +
+    theme(legend.position = "bottom")
+  
+  ggsave(paste0(path, "/BBparticipant_type_", deparse(substitute(count)), "_", i, ".jpg"), 
+         plot = p,
+         width = 2000,
+         height = 1500, 
+         units = "px",
+         dpi = 300)
+}
+
 ### Function to generate cumulative species trend over time plot
 Trend.sp <- function(file, path, i, palette){
   dat <- read_csv(file)
@@ -384,7 +457,7 @@ Trend.obs <- function(dat, path, i, palette){
 }
 
 ### Function to generate heatmap of observations (either gridded or density)
-Map.p <- function(dat, grid_dat, occ_dat, basemap, path, i, period, type = "Nrecords"){
+Map.p <- function(dat, grid_dat, occ_dat, basemap, path, i, period, type = "Nrecords", palette = NULL){
   if(type == "Nrecords") {
     p <- grid_dat %>%
       left_join(occ_dat %>%
@@ -394,24 +467,27 @@ Map.p <- function(dat, grid_dat, occ_dat, basemap, path, i, period, type = "Nrec
       ggplot() +
       geom_sf(data = map_LGA, fill = "white", colour = "dark grey", inherit.aes = F) +
       geom_sf(aes(fill = occ), colour = NA, alpha = .8) +
-      scale_fill_viridis_c(na.value = NA, option = "plasma", name = type) +
       theme_bw() +
       coord_sf(xlim = st_bbox(grid_dat)[c(1,3)],
                ylim = st_bbox(grid_dat)[c(2,4)]) +
       ggtitle(str_to_title(period))
     
-    ggsave(paste0(path, "/", type, "_", i, "_", period, ".jpg"),
-           plot = p,
-           width = 2000,
-           height = 1500,
-           units = "px",
-           dpi = 300)
+    if(is.null(palette))
+      p <- p + scale_fill_viridis_c(na.value = NA, option = "plasma", name = type) else
+        p <- p + scale_fill_gradientn(na.value = NA, colours = palette, name = type)
+      
+      ggsave(paste0(path, "/", type, "_", i, "_", period, ".jpg"),
+             plot = p,
+             width = 2000,
+             height = 1500,
+             units = "px",
+             dpi = 300)
   } else if(type == "Ndensity") {
     kde <- tryCatch(st_kde(dat %>%
-                    filter(record_period == period) %>%
-                    select(locality, decimalLatitude, decimalLongitude, identifiedBy, recordID, record_period, keep, maingroup) %>%
-                    st_as_sf(coords = c("decimalLongitude", "decimalLatitude"), crs = 7844) %>%
-                    st_transform(crs = 3112)),
+                             filter(record_period == period) %>%
+                             select(locality, decimalLatitude, decimalLongitude, identifiedBy, recordID, record_period, keep, maingroup) %>%
+                             st_as_sf(coords = c("decimalLongitude", "decimalLatitude"), crs = 7844) %>%
+                             st_transform(crs = 3112)),
                     error = function(e) e)
     
     if(!inherits(kde, "error")){
@@ -422,24 +498,27 @@ Map.p <- function(dat, grid_dat, occ_dat, basemap, path, i, period, type = "Nrec
                   filter(contlabel %in% c(5, 25, 50, 75, 95)) %>%
                   mutate(contlabel = factor(contlabel, levels = c(95, 75, 50, 25, 5))),
                 aes(fill = label_percent(contlabel)), colour = NA, alpha = .8) +
-        scale_fill_viridis_d(na.value = NA, option = "plasma", name = type) +
         theme_bw() +
         coord_sf(xlim = st_bbox(grid_dat)[c(1,3)],
                  ylim = st_bbox(grid_dat)[c(2,4)]) +
         ggtitle(str_to_title(period))
       
-      ggsave(paste0(path, "/", type, "_", i, "_", period, ".jpg"),
-             plot = p,
-             width = 2000,
-             height = 1500,
-             units = "px",
-             dpi = 300)
+      if(is.null(palette))
+        p <- p + scale_fill_viridis_d(na.value = NA, option = "plasma", name = type) else
+          p <- p + scale_fill_manual(na.value = NA, values = palette, name = type)
+        
+        ggsave(paste0(path, "/", type, "_", i, "_", period, ".jpg"),
+               plot = p,
+               width = 2000,
+               height = 1500,
+               units = "px",
+               dpi = 300)
     }
   } else stop("type should be `Nrecords` or `Ndensity`")
 }
 
 ## Function to generate greenspace map (either heatmap or point locality)
-Map.gs <- function(dat, green_dat, occ_dat, basemap, path, i, period, type = "Records"){
+Map.gs <- function(dat, green_dat, occ_dat, basemap, path, i, period, type = "Records", palette = NULL){
   
   if(type == "Records") {
     p <- 
@@ -465,11 +544,15 @@ Map.gs <- function(dat, green_dat, occ_dat, basemap, path, i, period, type = "Re
       ggplot() +
       geom_sf(data = map_LGA, fill = "white", colour = "dark grey", inherit.aes = F) +
       geom_sf(aes(fill = occ), colour = "light grey", size = .1, alpha = .8) +
-      scale_fill_viridis_c(na.value = NA, option = "plasma", name = "Nrecords") +
       theme_bw() +
       coord_sf(xlim = st_bbox(grid_dat)[c(1,3)],
                ylim = st_bbox(grid_dat)[c(2,4)]) +
       ggtitle("Records by urban greenspace")
+    
+    if(is.null(palette))
+      p <- p + scale_fill_viridis_c(na.value = NA, option = "plasma", name = "Nrecords") else
+        p <- p + scale_fill_gradientn(na.value = NA, colours = palette, name = "Nrecords")
+      
   } else stop("type should be `Records` or `Greenspace`")
   
   ggsave(paste0(path, "/", type, "_map_", i, "_", period, ".jpg"),
@@ -493,9 +576,9 @@ calc_angles <- function(data){
 }
 
 ### Function to draw piechart map with symbols
-plot_pie_map <- function(p_map, dat, bb_palette, scale.fact){
-  library(grImport2)
-  library(rphylopic)
+plot_pie_map <- function(p_map, dat, palette, scale.fact){
+  require(grImport2)
+  require(rphylopic)
   
   # rsvg::rsvg_png("phylopic/Arachnids.svg", "phylopic/Arachnids.png", height = 128)
   # rsvg::rsvg_png("phylopic/Birds.svg", "phylopic/Birds.png", height = 128)
@@ -513,11 +596,9 @@ plot_pie_map <- function(p_map, dat, bb_palette, scale.fact){
   
   phylopics <- list(Arachnids = png::readPNG("phylopic/Arachnids.png"),
                     Birds = png::readPNG("phylopic/Birds.png"),
-                    `Cartilaginous fishes` = png::readPNG("phylopic/Cartilaginous fishes.png"),
                     Frogs = png::readPNG("phylopic/Frogs.png"),
                     Fungi = png::readPNG("phylopic/Fungi.png"),
                     Insects = png::readPNG("phylopic/Insects.png"),
-                    Lampreys = png::readPNG("phylopic/Lampreys.png"),
                     Mammals = png::readPNG("phylopic/Mammals.png"),
                     `Other invertebrates` = png::readPNG("phylopic/Other invertebrates.png"),
                     Plants = png::readPNG("phylopic/Plants.png"),
@@ -528,27 +609,97 @@ plot_pie_map <- function(p_map, dat, bb_palette, scale.fact){
   
   radius_ALL <- as.numeric(p_map$layers[[2]]$data[1, 4])*scale.fact + 3000
   
-  angles_ALL <- calc_angles(dat[1, bb_palette$maingroup])
+  angles_ALL <- calc_angles(dat[1, palette$maingroup])
   
   angles_ALL <- (angles_ALL + replace_na(lag(angles_ALL), 0))/2
   
-  bb_palette <- bb_palette %>%
+  palette <- palette %>%
     mutate(angle = angles_ALL,
            x = coords_ALL$X + radius_ALL * sin(pi * 2 * angle/360),
            y = coords_ALL$Y + radius_ALL * cos(pi * 2 * angle/360))
   
-  groups <- colSums(dat[, bb_palette$maingroup])
+  groups <- colSums(dat[, palette$maingroup])
   groups <- names(groups[which(groups > 0)])
   
   for (i in groups){
     p_map <- p_map +
       add_phylopic(phylopics[[i]],
-                   x = as.numeric(filter(bb_palette, maingroup == i)[,4]),
-                   y = as.numeric(filter(bb_palette, maingroup == i)[,5]),
+                   x = as.numeric(filter(palette, maingroup == i)[,4]),
+                   y = as.numeric(filter(palette, maingroup == i)[,5]),
                    ysize = 3000,
-                   color = as.character(filter(bb_palette, maingroup == i)[,2]),
+                   color = as.character(filter(palette, maingroup == i)[,2]),
                    alpha = 1)
   }
   
   return(p_map)
+}
+
+### Function to calculate "enrichment" of species in category
+calc_enrich <- function(venn_groups, group, lower.tail = T, plot = F){
+  sp_ABC <- venn_groups[7]
+  
+  if(group == "General public") {
+    sp_A <- venn_groups[1]
+    sp_B <- venn_groups[2]
+    sp_C <- venn_groups[3]
+    sp_AB <- venn_groups[4]
+    sp_BC <- venn_groups[6]
+    sp_AC <- venn_groups[5]
+  }
+  
+  if(group == "BB organiser - Council") {
+    sp_A <- venn_groups[2]
+    sp_B <- venn_groups[3]
+    sp_C <- venn_groups[1]
+    sp_AB <- venn_groups[6]
+    sp_BC <- venn_groups[5]
+    sp_AC <- venn_groups[4]
+  }
+  
+  if(group == "BB organiser - Supporting") {
+    sp_A <- venn_groups[3]
+    sp_B <- venn_groups[1]
+    sp_C <- venn_groups[2]
+    sp_AB <- venn_groups[5]
+    sp_BC <- venn_groups[4]
+    sp_AC <- venn_groups[6]
+  }
+  
+  overlap = sp_AB + sp_AC + sp_ABC # size of overlap
+  group1 = sp_A + overlap # number of species in group A
+  group2 = sum(venn_groups) - sp_A # number of species in groups B + C
+  total = sum(venn_groups) # total number of species
+  
+  if(lower.tail)
+    p <- phyper(overlap, group2, total - group2, group1, lower.tail = T) else
+      p <- phyper(overlap - 1, group2, total - group2, group1, lower.tail = F)
+  
+  if(plot){
+    d <- dhyper(0:sum(venn_groups), group2, total - group2, group1)
+    
+    d_plot_lims <- c(min(seq(0, 100, length = length(d))[min(which(d > 0))], (overlap/sum(venn_groups))*100),
+                     max(seq(0, 100, length = length(d))[max(which(d > 0))], (overlap/sum(venn_groups))*100))
+    
+    pd <- tibble(Overlap = 0:sum(venn_groups),
+                 Density = d) %>%
+      mutate(Overlap = (Overlap / max(Overlap)) * 100) %>%
+      ggplot(aes(x = Overlap, y = Density)) +
+      geom_area(data = filter(tibble(Overlap = 0:sum(venn_groups),
+                                     Density = d),
+                              Overlap <= overlap) %>%
+                  mutate(Overlap = (Overlap / sum(venn_groups)) * 100),
+                fill = "red", alpha = .2, colour = NA) +
+      geom_line(colour = "grey") +
+      geom_vline(aes(xintercept = (overlap/sum(venn_groups))*100), colour = "deepskyblue2") +
+      theme_bw() +
+      scale_x_continuous(limits = c(max(d_plot_lims[1] - 15, 0),
+                                    min(d_plot_lims[2] + 15, 100))) +
+      labs(x = "% Overlap",
+           title = paste("Probability density of overlap: ", group, sep = ""))
+    
+    print(pd)
+    
+    return(list(p = p, plot = pd))
+  } else
+    return(p)
 }
