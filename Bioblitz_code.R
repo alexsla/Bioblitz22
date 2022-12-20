@@ -10,6 +10,8 @@ library(ggridges)
 library(ggforce)
 library(stringr)
 library(ggVennDiagram)
+library(lubridate)
+library(emmeans)
 source("R/bb_functions.R")
 
 ## LOAD DATA
@@ -585,7 +587,7 @@ dALL.cleanup.groups_corrected %>%
   labs(x = "Year",
        y = "Mean no. obersvations per species")
 
-ggsave(paste0("outputs/Summary/Nobs_per_sp_per_year.jpg"), 
+ggsave(paste0("outputs/Summary/Nrecords_per_sp_per_year.jpg"), 
        width = 2000,
        height = 1500, 
        units = "px",
@@ -615,6 +617,177 @@ ggsave(paste0("outputs/Summary/Nsp_per_year.jpg"),
        height = 1500, 
        units = "px",
        dpi = 300)
+
+dat_2021 <- bind_rows(dALL.cleanup.groups_corrected %>%
+                        filter(year == 2021, record_period == "recent") %>%
+                        mutate(eventDate = ymd(str_extract(eventDate, ".*(?=\\T)"))),
+                      dALL.cleanup.groups_corrected %>%
+                        filter(year == 2021, record_period == "bb21", str_detect(eventDate, "GMT")) %>%
+                        rowwise() %>%
+                        mutate(eventDate = paste(str_split(eventDate, " ")[[1]][2], str_split(eventDate, " ")[[1]][3], str_split(eventDate, " ")[[1]][4], sep = "-")) %>%
+                        mutate(eventDate = mdy(eventDate)),
+                      dALL.cleanup.groups_corrected %>%
+                        filter(year == 2021, record_period == "bb21", !str_detect(eventDate, "GMT")) %>%
+                        rowwise() %>%
+                        mutate(eventDate = str_split(eventDate, " ")[[1]][1]) %>%
+                        mutate(eventDate = parse_date_time(eventDate, orders = c("dmy", "ymd"))))
+
+
+dat_2021 %>%
+  group_by(eventDate, maingroup, record_period) %>%
+  count() %>%
+  ggplot(aes(x = eventDate, y = n, colour = maingroup, fill = maingroup, linetype = factor(record_period, labels = c("Bioblitz", "Baseline")))) +
+  geom_point(alpha = .1) +
+  geom_smooth() +
+  scale_colour_manual(values = bb_palette$col) +
+  scale_fill_manual(values = bb_palette$col) +
+  theme_bw() +
+  facet_wrap(vars(maingroup), scales = "free_y", ncol = 3) +
+  labs(y = "No. observations per day",
+       x = "Date",
+       colour = "Group",
+       fill = "Group",
+       linetype = "Record period")
+
+ggsave(paste0("outputs/Summary/Nrecords_2021.jpg"), 
+       width = 2000,
+       height = 1500, 
+       units = "px",
+       dpi = 300)
+
+dat_2021 %>%
+  group_by(eventDate, maingroup, record_period, morphospecies) %>%
+  count() %>%
+  select(-n) %>%
+  group_by(eventDate, maingroup, record_period) %>%
+  count() %>%
+  ggplot(aes(x = eventDate, y = n, colour = maingroup, fill = maingroup, linetype = factor(record_period, labels = c("Bioblitz", "Baseline")))) +
+  geom_point(alpha = .1) +
+  geom_smooth() +
+  scale_colour_manual(values = bb_palette$col) +
+  scale_fill_manual(values = bb_palette$col) +
+  theme_bw() +
+  facet_wrap(vars(maingroup), scales = "free_y", ncol = 3) +
+  labs(y = "No. species per day",
+       x = "Date",
+       colour = "Group",
+       fill = "Group",
+       linetype = "Record period")
+
+ggsave(paste0("outputs/Summary/Nsp_aov.jpg"), 
+       width = 2000,
+       height = 1500, 
+       units = "px",
+       dpi = 300)
+
+dat_september <- bind_rows(dALL.cleanup.groups_corrected %>%
+                             filter(record_period == "recent") %>%
+                             mutate(eventDate = ymd(str_extract(eventDate, ".*(?=\\T)"))),
+                           dALL.cleanup.groups_corrected %>%
+                             filter(year == 2021, record_period == "bb21", str_detect(eventDate, "GMT")) %>%
+                             rowwise() %>%
+                             mutate(eventDate = paste(str_split(eventDate, " ")[[1]][2], str_split(eventDate, " ")[[1]][3], str_split(eventDate, " ")[[1]][4], sep = "-")) %>%
+                             mutate(eventDate = mdy(eventDate)),
+                           dALL.cleanup.groups_corrected %>%
+                             filter(year == 2021, record_period == "bb21", !str_detect(eventDate, "GMT")) %>%
+                             rowwise() %>%
+                             mutate(eventDate = str_split(eventDate, " ")[[1]][1]) %>%
+                             mutate(eventDate = parse_date_time(eventDate, orders = c("dmy", "ymd")))) %>%
+  mutate(month = month(eventDate),
+         day = day(eventDate)) %>%
+  filter(month == 9)
+
+dat_september %>%
+  mutate(date = dmy(paste(day, month, "2022", sep = "-"))) %>%
+  group_by(date, maingroup, record_period, year) %>%
+  count() %>%
+  ggplot(aes(x = factor(record_period, labels = c("Bioblitz", "Baseline")), y = n, fill = maingroup)) +
+  geom_boxplot() +
+  scale_fill_manual(values = bb_palette$col) +
+  theme_bw() +
+  facet_wrap(vars(maingroup), scales = "free_y", ncol = 3) +
+  labs(y = "No. observations per day",
+       x = "Record period",
+       fill = "Group")
+
+ggsave(paste0("outputs/Summary/Nrecords_aov.jpg"), 
+       width = 2000,
+       height = 1500, 
+       units = "px",
+       dpi = 300)
+
+sep_av <- aov(n ~ record_period * maingroup,
+              dat = dat_september %>%
+                mutate(date = dmy(paste(day, month, "2022", sep = "-"))) %>%
+                group_by(date, maingroup, record_period, year) %>%
+                count())
+
+summary(sep_av)
+
+sep_res <- lsmeans(sep_av, pairwise ~ record_period * maingroup, adjust = "bonferroni")
+
+sep_cont <- summary(sep_res[[2]])[!is.na(summary(sep_res[[2]])[,4]),] %>%
+  filter(str_count(contrast, "Arachnids") == 2 |
+           str_count(contrast, "Birds") == 2 |
+           str_count(contrast, "Frogs") == 2 |
+           str_count(contrast, "Fungi") == 2 |
+           str_count(contrast, "Insects") == 2 |
+           str_count(contrast, "Mammals") == 2 |
+           str_count(contrast, "Other invertebrates") == 2 |
+           str_count(contrast, "Plants") == 2 |
+           str_count(contrast, "Ray-finned fishes") == 2 |
+           str_count(contrast, "Reptiles") == 2)
+
+sep_cont %>% write_csv("outputs/Summary/Nrecords_aov.csv")
+
+dat_september %>%
+  mutate(date = dmy(paste(day, month, "2022", sep = "-"))) %>%
+  group_by(date, maingroup, record_period, year, morphospecies) %>%
+  count() %>%
+  select(-n) %>%
+  group_by(date, maingroup, record_period, year) %>%
+  count() %>%
+  ggplot(aes(x = factor(record_period, labels = c("Bioblitz", "Baseline")), y = n, fill = maingroup)) +
+  geom_boxplot() +
+  scale_fill_manual(values = bb_palette$col) +
+  theme_bw() +
+  facet_wrap(vars(maingroup), scales = "free_y", ncol = 3) +
+  labs(y = "No. sp per day",
+       x = "Record period",
+       fill = "Group")
+
+ggsave(paste0("outputs/Summary/Nsp_aov.jpg"), 
+       width = 2000,
+       height = 1500, 
+       units = "px",
+       dpi = 300)
+
+sep_av <- aov(n ~ record_period * maingroup,
+              dat = dat_september %>%
+                mutate(date = dmy(paste(day, month, "2022", sep = "-"))) %>%
+                group_by(date, maingroup, record_period, year, morphospecies) %>%
+                count() %>%
+                select(-n) %>%
+                group_by(date, maingroup, record_period, year) %>%
+                count())
+
+summary(sep_av)
+
+sep_res <- lsmeans(sep_av, pairwise ~ record_period * maingroup, adjust = "bonferroni")
+
+sep_cont <- summary(sep_res[[2]])[!is.na(summary(sep_res[[2]])[,4]),] %>%
+  filter(str_count(contrast, "Arachnids") == 2 |
+           str_count(contrast, "Birds") == 2 |
+           str_count(contrast, "Frogs") == 2 |
+           str_count(contrast, "Fungi") == 2 |
+           str_count(contrast, "Insects") == 2 |
+           str_count(contrast, "Mammals") == 2 |
+           str_count(contrast, "Other invertebrates") == 2 |
+           str_count(contrast, "Plants") == 2 |
+           str_count(contrast, "Ray-finned fishes") == 2 |
+           str_count(contrast, "Reptiles") == 2)
+
+sep_cont %>% write_csv("outputs/Summary/Nsp_aov.csv")
 
 ## emerging story plot
 all_emerging <- read_csv("outputs/Table 2/emerging_ALL.csv") %>%
