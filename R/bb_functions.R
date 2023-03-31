@@ -4,40 +4,38 @@
 Splist.Nrecords <- function(dat, full_dat, cypher, path, i){
   dat <-
     dat %>%
-    group_by(morphospecies, maingroup, genus, family, subgroup, record_period) %>%
+    group_by(morphospecies, record_period) %>%
     summarise(Nrecords_total = sum(occ)) %>%
     spread(record_period, Nrecords_total) %>%
     mutate_if(is.numeric, replace_na, 0) %>%
-    mutate(total = sum(bb21, historical, recent, na.rm = T),
-           Perc_records_total = total/nrow(dALL.cleanup.groups_corrected)*100,
+    mutate(total = sum(bb22, historical, recent, na.rm = T),
+           Perc_records_total = total/nrow(dat)*100,
            Perc_records_historical = historical/total*100,
            Perc_records_recent = recent/total*100,
-           Perc_records_bioblitz = bb21/total*100,
+           Perc_records_bioblitz = bb22/total*100,
            distribution = case_when(Perc_records_bioblitz == 0 ~ 1,
                                     Perc_records_bioblitz == 100 ~ 2,
                                     T ~ 3)) %>%
     ungroup() %>%
-    left_join(dALL.cleanup.groups_corrected %>%
+    left_join(dat %>%
                 group_by(morphospecies) %>%
                 summarise(most_recent_record = max(year))) %>%
-    left_join(dALL.cleanup.groups_corrected %>%
-                filter(record_period %in% c("recent", "bb21")) %>%
+    left_join(dat %>%
+                filter(record_period %in% c("recent", "bb22")) %>%
                 group_by(morphospecies) %>%
                 summarise(first_record_after1991 = min(year))) %>%
-    left_join(vba %>% select(-type), by = c("morphospecies" = "sname")) %>%
-    mutate(origin = case_when(origin %in% c("Native", "native", "Native but some stands may be alien") ~ "Native",
-                              origin %in% c("Introduced", "Naturalised alien", "Introduced but doubt it ever established a population in victoria", "introduced") ~  "Introduced"),
-           lazarus = case_when(historical > 0 & recent == 0 & bb21 > 0 ~ "Lazarus"),
-           new = case_when(historical == 0 & recent == 0 & bb21 > 0 ~ "New"),
-           new_introduced = case_when(historical == 0 & recent == 0 & bb21 > 0 & origin == "Introduced" ~ "New introduced")) %>%
+    left_join(cypher, by = c("morphospecies")) %>%
+    mutate(lazarus = case_when(historical > 0 & recent == 0 & bb22 > 0 ~ "Lazarus"),
+           new = case_when(historical == 0 & recent == 0 & bb22 > 0 ~ "New"),
+           new_introduced = case_when(historical == 0 & recent == 0 & bb22 > 0 & origin == "Introduced" ~ "New introduced")) %>%
     rename(CommonName = cname,
            Origin = origin,
            EPBC = epbc,
-           FFGAct = ffg,
+           FFGAct = ffga,
            Nrecords_total = total,
            Nrecords_historical = historical,
            Nrecords_recent = recent,
-           Nrecords_bioblitz = bb21) %>%
+           Nrecords_bioblitz = bb22) %>%
     mutate(CommonName = str_replace_all(str_to_title(str_replace_all(CommonName, "-", "_")), "_", "-")) %>%
     select(maingroup, morphospecies, CommonName, Origin, family, genus, subgroup, EPBC, FFGAct, Nrecords_total, Perc_records_total, Nrecords_historical, Perc_records_historical, Nrecords_recent, Perc_records_recent, Nrecords_bioblitz, Perc_records_bioblitz, most_recent_record, first_record_after1991, distribution, lazarus, new, new_introduced)
   
@@ -76,13 +74,13 @@ SpRichness <- function(file, path, group, i) {
       
       dat <-
         dat %>%
-        summarise(Nrecords_total_from1991 = sum(Nrecords_recent + Nrecords_bioblitz),
+        summarise(Nrecords_total_from1992 = sum(Nrecords_recent + Nrecords_bioblitz),
                   Nrecords_recent = sum(Nrecords_recent),
                   Nrecords_bioblitz = sum(Nrecords_bioblitz)) %>%
         left_join(dat %>%
                     filter(Nrecords_recent > 0 | Nrecords_bioblitz > 0) %>%
                     group_by({{group}}) %>%
-                    summarise(Nsp_total_from1991 = length(morphospecies))) %>%
+                    summarise(Nsp_total_from1992 = length(morphospecies))) %>%
         left_join(dat %>%
                     filter(Nrecords_recent > 0) %>%
                     group_by({{group}}) %>%
@@ -108,11 +106,11 @@ SpRichness <- function(file, path, group, i) {
 Common.sp <- function(file, path, i){
   dat <-
     read_csv(file) %>%
-    mutate(Nrecords_total_from1991 = Nrecords_recent + Nrecords_bioblitz,
-           Perc_records_bioblitz = (Nrecords_bioblitz/Nrecords_total_from1991)*100) %>%
+    mutate(Nrecords_total_from1992 = Nrecords_recent + Nrecords_bioblitz,
+           Perc_records_bioblitz = (Nrecords_bioblitz/Nrecords_total_from1992)*100) %>%
     arrange(desc(Nrecords_bioblitz)) %>%
     slice(1:25) %>%
-    select(morphospecies, CommonName, genus, family, subgroup, maingroup, Origin, Nrecords_bioblitz, Nrecords_total_from1991, Perc_records_bioblitz)
+    select(morphospecies, CommonName, genus, family, subgroup, maingroup, Origin, Nrecords_bioblitz, Nrecords_total_from1992, Perc_records_bioblitz)
   
   write_csv(dat, paste0(path, "/Common_species_", i, ".csv"), na = "")
 }
@@ -123,18 +121,18 @@ Common.group <- function(file, path, group, i){
     ungroup()
   
   dat <- dat %>%
-    mutate(Perc_records_bioblitz = (Nrecords_bioblitz/Nrecords_total_from1991)*100,
+    mutate(Perc_records_bioblitz = (Nrecords_bioblitz/Nrecords_total_from1992)*100,
            Nuniquesp_bioblitz = replace_na(Nuniquesp_bioblitz, 0),
-           Perc_newsp_bioblitz = (Nuniquesp_bioblitz/Nsp_total_from1991)*100,
+           Perc_newsp_bioblitz = (Nuniquesp_bioblitz/Nsp_total_from1992)*100,
            Perc_records_bioblitz = replace_na(Perc_records_bioblitz, 0),
            Perc_newsp_bioblitz = replace_na(Perc_newsp_bioblitz, 0)) %>%
     arrange(desc(Nrecords_bioblitz))
   
   if(deparse(substitute(group)) == "maingroup")
     dat <- dat %>%
-    select({{group}}, Nrecords_total_from1991, Nrecords_bioblitz, Perc_records_bioblitz, Nuniquesp_bioblitz, Perc_newsp_bioblitz, Nsp_bioblitz) else
+    select({{group}}, Nrecords_total_from1992, Nrecords_bioblitz, Perc_records_bioblitz, Nuniquesp_bioblitz, Perc_newsp_bioblitz, Nsp_bioblitz) else
       dat <- dat %>%
-    select(maingroup, {{group}}, Nrecords_total_from1991, Nrecords_bioblitz, Perc_records_bioblitz, Nuniquesp_bioblitz, Perc_newsp_bioblitz, Nsp_bioblitz)
+    select(maingroup, {{group}}, Nrecords_total_from1992, Nrecords_bioblitz, Perc_records_bioblitz, Nuniquesp_bioblitz, Perc_newsp_bioblitz, Nsp_bioblitz)
   
   write_csv(dat, paste0(path, "/Common_", deparse(substitute(group)), "_", i, ".csv"), na = "")
 }
@@ -145,16 +143,19 @@ Nrecords.GS <- function(dat, occ_dat, sp, path, i){
     dat %>%
     as_tibble() %>%
     select(FID, PARK_NAME) %>%
-    left_join(occ_dat %>% filter(record_period == "bb21")) %>%
+    left_join(occ_dat %>% filter(record_period == "bb22")) %>%
     drop_na(maingroup) %>%
     mutate(maingroup = case_when(maingroup == "Arachnids" ~ "Nrecords_ARA",
                                  maingroup == "Birds" ~ "Nrecords_BIR",
+                                 maingroup == "Cartilaginous fishes" ~ "Nrecords_CAF",
+                                 maingroup == "Chromists" ~ "Nrecords_CHR",
                                  maingroup == "Frogs" ~ "Nrecords_FRO",
                                  maingroup == "Fungi" ~ "Nrecords_FUN",
                                  maingroup == "Insects" ~ "Nrecords_INS",
                                  maingroup == "Other invertebrates" ~ "Nrecords_INV",
                                  maingroup == "Mammals" ~ "Nrecords_MAM",
                                  maingroup == "Plants" ~ "Nrecords_PLA",
+                                 maingroup == "Ray-finned fishes" ~ "Nrecords_RAF",
                                  maingroup == "Reptiles" ~ "Nrecords_REP")) %>%
     spread(maingroup, occ) %>%
     rename(Greenspace_name = PARK_NAME) %>%
@@ -164,16 +165,19 @@ Nrecords.GS <- function(dat, occ_dat, sp, path, i){
     left_join(dat %>%
                 as_tibble() %>%
                 select(FID, PARK_NAME) %>%
-                left_join(sp %>% filter(record_period == "bb21")) %>%
+                left_join(sp %>% filter(record_period == "bb22")) %>%
                 drop_na(maingroup) %>%
                 mutate(maingroup = case_when(maingroup == "Arachnids" ~ "Nsp_ARA",
                                              maingroup == "Birds" ~ "Nsp_BIR",
+                                             maingroup == "Cartilaginous fishes" ~ "Nsp_CAF",
+                                             maingroup == "Chromists" ~ "Nsp_CHR",
                                              maingroup == "Frogs" ~ "Nsp_FRO",
                                              maingroup == "Fungi" ~ "Nsp_FUN",
                                              maingroup == "Insects" ~ "Nsp_INS",
                                              maingroup == "Other invertebrates" ~ "Nsp_INV",
                                              maingroup == "Mammals" ~ "Nsp_MAM",
                                              maingroup == "Plants" ~ "Nsp_PLA",
+                                             maingroup == "Ray-finned fishes" ~ "Nsp_RAF",
                                              maingroup == "Reptiles" ~ "Nsp_REP")) %>%
                 spread(maingroup, occ) %>%
                 rename(Greenspace_name = PARK_NAME) %>%
@@ -188,12 +192,12 @@ Nrecords.GS <- function(dat, occ_dat, sp, path, i){
 Nrecords.PAR <- function(dat, path, i){
   dat <-
     dat %>%
-    filter(record_period == "bb21") %>%
+    filter(record_period == "bb22") %>%
     group_by(identifiedBy) %>%
-    summarise(Nrecords_bb21 = sum(occ)) %>%
+    summarise(Nrecords_bb22 = sum(occ)) %>%
     rename(Participant_username = identifiedBy) %>%
-    mutate(Perc_records_bb21 = (Nrecords_bb21/sum(Nrecords_bb21))*100) %>%
-    arrange(desc(Nrecords_bb21))
+    mutate(Perc_records_bb22 = (Nrecords_bb22/sum(Nrecords_bb22))*100) %>%
+    arrange(desc(Nrecords_bb22))
   
   write_csv(dat, paste0(path, "/BBparticipants_", i, ".csv"), na = "")
 }
@@ -202,7 +206,7 @@ Nrecords.PAR <- function(dat, path, i){
 BBparticipants_type <- function(dat, participants, path, i){
   dat <-
     dat %>%
-    filter(record_period == "bb21") %>%
+    filter(record_period == "bb22") %>%
     left_join(participants, by = c("identifiedBy" = "Participant_username"))
   
   dat_Nrecords <- bind_rows(dat %>%
@@ -235,14 +239,14 @@ BBparticipants_type <- function(dat, participants, path, i){
 BBparticipants_bin <- function(dat, path, i){
   dat <-
     dat %>%
-    filter(record_period == "bb21") %>%
+    filter(record_period == "bb22") %>%
     group_by(identifiedBy) %>%
-    summarise(Nrecords_bb21 = sum(occ)) %>%
-    count(Nrecords_bin = cut(Nrecords_bb21, breaks = c(0, 5, 50, 200, max(Nrecords_bb21)+1),
+    summarise(Nrecords_bb22 = sum(occ)) %>%
+    count(Nrecords_bin = cut(Nrecords_bb22, breaks = c(0, 5, 50, 200, max(Nrecords_bb22)+1),
                              labels = c("1 to 5",
                                         "6 to 50",
                                         "51 to 200",
-                                        paste0("200 to ", max(Nrecords_bb21)+1)))) %>%
+                                        paste0("200 to ", max(Nrecords_bb22)+1)))) %>%
     rename(Nparticipants = n)
   
   write_csv(dat, paste0(path, "/BBparticipants_bins_", i, ".csv"), na = "")
@@ -252,7 +256,7 @@ BBparticipants_bin <- function(dat, path, i){
 BBmaingroup <- function(dat, path, i){
   dat <-
     dat %>%
-    filter(record_period == "bb21") %>%
+    filter(record_period == "bb22") %>%
     mutate(maingroup = factor(maingroup, levels =c("Arachnids","Birds","Frogs","Fungi","Insects","Mammals","Other invertebrates","Plants","Ray-finned fishes","Reptiles"))) %>%
     group_by(maingroup)
   
@@ -260,10 +264,10 @@ BBmaingroup <- function(dat, path, i){
                      select(maingroup, identifiedBy) %>%
                      unique() %>%
                      count() %>%
-                     rename(Nparticipants_bb21 = n),
+                     rename(Nparticipants_bb22 = n),
                    dat %>%
                      count() %>%
-                     rename(Nrecords_bb21 = n))
+                     rename(Nrecords_bb22 = n))
   
   write_csv(dat, paste0(path, "/BBmaingroup_", i, ".csv"), na = "")
 }
@@ -276,14 +280,17 @@ BBmaingroup <- function(dat, path, i){
 Common.sp.p <- function(file, path, i, palette){
   dat <- read_csv(file)
   
+  dat$CommonName[which(dat$CommonName %in% dat$CommonName[duplicated(dat$CommonName)])] <- NA
+  
   ggsave(paste0(path, "/Common_species_", i, ".jpg"),
          plot = dat %>%
-           mutate(CommonName = case_when(is.na(CommonName) ~ morphospecies,
-                                         T ~ CommonName)) %>%
+           mutate(CommonName = case_when(is.na(CommonName) ~ glue::glue("<i>{morphospecies}</i>"),
+                                         T ~ CommonName)
+                  ) %>%
            ggplot(aes(x = reorder(CommonName, -Nrecords_bioblitz), y = Nrecords_bioblitz, fill = maingroup)) +
            geom_bar(stat = "identity") +
            theme_bw() +
-           theme(axis.text.x = element_text(angle = 45, hjust = 1),
+           theme(axis.text.x = ggtext::element_markdown(angle = 45, hjust = 1),
                  plot.margin = margin(t = .5, r = .5, b = .5, l = 1.5, unit = "cm")) +
            scale_fill_manual(values = as.character(bb_palette %>%
                                                      filter(maingroup %in% dat$maingroup) %>%
@@ -292,7 +299,7 @@ Common.sp.p <- function(file, path, i, palette){
                              name = "Group") +
            labs(x = "Species",
                 y = "No. observations",
-                title = "Bioblitz 2021"),
+                title = "Bioblitz 2022"),
          width = 2000,
          height = 1500, 
          units = "px",
@@ -396,7 +403,7 @@ Trend.sp <- function(file, path, i, palette){
   p <- dat %>%
     group_by(first_record_after1991, maingroup) %>%
     count() %>%
-    mutate(first_record_after1991 = case_when(is.na(first_record_after1991) ~ 1990,
+    mutate(first_record_after1991 = case_when(is.na(first_record_after1991) ~ 1991,
                                               T ~ first_record_after1991)) %>%
     arrange(first_record_after1991) %>%
     ungroup() %>%
@@ -404,7 +411,7 @@ Trend.sp <- function(file, path, i, palette){
     mutate(n = cumsum(n)) %>%
     ungroup() %>%
     spread(maingroup, n) %>%
-    mutate_all(funs(case_when(first_record_after1991 == 2021 ~ max(., na.rm = T), 
+    mutate_all(funs(case_when(first_record_after1991 == 2022 ~ max(., na.rm = T), 
                               TRUE ~ .))) %>%
     gather(maingroup, n, -first_record_after1991) %>%
     drop_na() %>%
@@ -465,16 +472,18 @@ Map.p <- function(dat, grid_dat, occ_dat, basemap, path, i, period, type = "Nrec
                   group_by(FID) %>%
                   summarise(occ = sum(occ))) %>%
       ggplot() +
-      geom_sf(data = map_LGA, fill = "white", colour = "dark grey", inherit.aes = F) +
+      geom_sf(data = map_VIC, fill = "grey95", colour = "grey75") +
+      geom_sf(data = map_LGA, fill = NA, colour = "black", size = 2) +
       geom_sf(aes(fill = occ), colour = NA, alpha = .8) +
       theme_bw() +
       coord_sf(xlim = st_bbox(grid_dat)[c(1,3)],
                ylim = st_bbox(grid_dat)[c(2,4)]) +
-      ggtitle(str_to_title(period))
+      theme(panel.background = element_rect(fill = 'lightblue'),
+            panel.grid = element_blank())
     
     if(is.null(palette))
-      p <- p + scale_fill_viridis_c(na.value = NA, option = "plasma", name = type) else
-        p <- p + scale_fill_gradientn(na.value = NA, colours = palette, name = type)
+      p <- p + scale_fill_viridis_c(na.value = NA, option = "plasma", name = "No. of records") else
+        p <- p + scale_fill_gradientn(na.value = NA, colours = palette, name = "No. of records")
       
       ggsave(paste0(path, "/", type, "_", i, "_", period, ".jpg"),
              plot = p,
@@ -493,7 +502,8 @@ Map.p <- function(dat, grid_dat, occ_dat, basemap, path, i, period, type = "Nrec
     if(!inherits(kde, "error")){
       p <- kde %>%
         ggplot() +
-        geom_sf(data = map_LGA, fill = "white", colour = "dark grey", inherit.aes = F) +
+        geom_sf(data = map_VIC, fill = "grey95", colour = "grey75") +
+        geom_sf(data = map_LGA, fill = NA, colour = "black", size = 2) +
         geom_sf(data = kde$sf %>%
                   filter(contlabel %in% c(5, 25, 50, 75, 95)) %>%
                   mutate(contlabel = factor(contlabel, levels = c(95, 75, 50, 25, 5))),
@@ -501,11 +511,13 @@ Map.p <- function(dat, grid_dat, occ_dat, basemap, path, i, period, type = "Nrec
         theme_bw() +
         coord_sf(xlim = st_bbox(grid_dat)[c(1,3)],
                  ylim = st_bbox(grid_dat)[c(2,4)]) +
-        ggtitle(str_to_title(period))
+        ggtitle(str_to_title(period)) +
+        theme(panel.background = element_rect(fill = 'lightblue'),
+              panel.grid = element_blank())
       
       if(is.null(palette))
-        p <- p + scale_fill_viridis_d(na.value = NA, option = "plasma", name = type) else
-          p <- p + scale_fill_manual(na.value = NA, values = palette, name = type)
+        p <- p + scale_fill_viridis_d(na.value = NA, option = "plasma", name = "Density of records") else
+          p <- p + scale_fill_manual(na.value = NA, values = palette, name = "Density of records")
         
         ggsave(paste0(path, "/", type, "_", i, "_", period, ".jpg"),
                plot = p,
@@ -521,37 +533,47 @@ Map.p <- function(dat, grid_dat, occ_dat, basemap, path, i, period, type = "Nrec
 Map.gs <- function(dat, green_dat, occ_dat, basemap, path, i, period, type = "Records", palette = NULL){
   
   if(type == "Records") {
+    if(is.null(palette))
+      col_rec = "blue" else
+        col_rec = tail(palette, 1)
+    
     p <- 
       green_dat %>%
       ggplot() +
-      geom_sf(data = map_LGA, fill = "white", colour = "dark grey", inherit.aes = F) +
-      geom_sf(fill = "darkolivegreen4", colour = NA, alpha = .8) +
+      geom_sf(data = map_VIC, fill = "grey95", colour = "grey75") +
+      geom_sf(data = greenspaces, fill = "darkolivegreen", colour = NA, alpha = .8) +
+      geom_sf(data = map_LGA, fill = NA, colour = "black", size = 2) +
       geom_sf(data = dat %>%
                 filter(record_period == period) %>%
                 st_as_sf(coords = c("decimalLongitude", "decimalLatitude"), crs = "WGS84"),
-              colour = "blue", size = .5) +
+              fill = col_rec, shape = 21, colour = "black", size = 1, stroke = .5) +
       theme_bw() +
       coord_sf(xlim = st_bbox(grid_dat)[c(1,3)],
                ylim = st_bbox(grid_dat)[c(2,4)]) +
-      ggtitle("Spatial location of records")
+      ggtitle("Spatial location of records") +
+      theme(panel.background = element_rect(fill = 'lightblue'),
+            panel.grid = element_blank())
   } else if (type == "Greenspace") {
     p <- 
       green_dat %>%
-      left_join(occ_greenspace %>%
+      left_join(occ_dat %>%
                   filter(record_period == period) %>%
                   group_by(FID) %>%
                   summarise(occ = sum(occ))) %>%
       ggplot() +
-      geom_sf(data = map_LGA, fill = "white", colour = "dark grey", inherit.aes = F) +
+      geom_sf(data = map_VIC, fill = "grey95", colour = "grey75") +
       geom_sf(aes(fill = occ), colour = "light grey", size = .1, alpha = .8) +
+      geom_sf(data = map_LGA, fill = NA, colour = "black", size = 2) +
       theme_bw() +
       coord_sf(xlim = st_bbox(grid_dat)[c(1,3)],
                ylim = st_bbox(grid_dat)[c(2,4)]) +
-      ggtitle("Records by urban greenspace")
+      ggtitle("Records by urban greenspace") +
+      theme(panel.background = element_rect(fill = 'lightblue'),
+            panel.grid = element_blank())
     
     if(is.null(palette))
-      p <- p + scale_fill_viridis_c(na.value = NA, option = "plasma", name = "Nrecords") else
-        p <- p + scale_fill_gradientn(na.value = NA, colours = palette, name = "Nrecords")
+      p <- p + scale_fill_viridis_c(na.value = NA, option = "plasma", name = "No. of records") else
+        p <- p + scale_fill_gradientn(na.value = NA, colours = palette, name = "No. of records")
       
   } else stop("type should be `Records` or `Greenspace`")
   
@@ -583,6 +605,7 @@ plot_pie_map <- function(p_map, dat, palette, scale.fact){
   # rsvg::rsvg_png("phylopic/Arachnids.svg", "phylopic/Arachnids.png", height = 128)
   # rsvg::rsvg_png("phylopic/Birds.svg", "phylopic/Birds.png", height = 128)
   # rsvg::rsvg_png("phylopic/Cartilaginous fishes.svg", "phylopic/Cartilaginous fishes.png", height = 128)
+  # rsvg::rsvg_png("phylopic/Chromists.svg", "phylopic/Chromists.png", height = 128)
   # rsvg::rsvg_png("phylopic/Frogs.svg", "phylopic/Frogs.png", height = 128)
   # rsvg::rsvg_png("phylopic/Fungi.svg", "phylopic/Fungi.png", height = 128)
   # rsvg::rsvg_png("phylopic/Arachnids.svg", "phylopic/Arachnids.png", height = 128)
@@ -596,6 +619,8 @@ plot_pie_map <- function(p_map, dat, palette, scale.fact){
   
   phylopics <- list(Arachnids = png::readPNG("phylopic/Arachnids.png"),
                     Birds = png::readPNG("phylopic/Birds.png"),
+                    `Cartilaginous fishes` = png::readPNG("phylopic/Cartilaginous fishes.png"),
+                    Chromists = png::readPNG("phylopic/Chromists.png"),
                     Frogs = png::readPNG("phylopic/Frogs.png"),
                     Fungi = png::readPNG("phylopic/Fungi.png"),
                     Insects = png::readPNG("phylopic/Insects.png"),
