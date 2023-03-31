@@ -16,75 +16,59 @@ source("R/bb_functions.R")
 
 ## LOAD DATA
 # Load the clean dataset of biodiversity records, and the cypher file 
-dALL.cleanup.groups_corrected <- read_csv("data/ALLrecords_cleanup_groups_corrected_for_CESAR_15Nov2022.csv")
+dat_all <- read_csv("data/Records v1 7Mar23.csv")
 
-councils_full <- unique(dALL.cleanup.groups_corrected$council)
+cypher <- read_csv("data/Morphospecies cypher v1 7Mar23.csv")
 
-# fix some issues with duplicate groupings
-double_gen <- dALL.cleanup.groups_corrected %>%
-  filter(morphospecies %in% (dALL.cleanup.groups_corrected %>%
-                               select(morphospecies, genus) %>%
-                               unique() %>%
-                               group_by(morphospecies) %>%
-                               count() %>%
-                               filter(n > 1))$morphospecies)
+synonyms <- read_csv("data/Synonyms v1 7Mar23.csv")
 
-dALL.cleanup.groups_corrected[which(dALL.cleanup.groups_corrected$morphospecies %in% double_gen$morphospecies), "genus"] <- sapply(str_split(double_gen$morphospecies, " "), "[[", 1)
+dat_all <- dat_all %>%
+  left_join(synonyms, by = c("morphospecies" = "synonym")) %>%
+  mutate(morphospecies = case_when(is.na(accepted) ~ morphospecies,
+                                   T ~ accepted),
+         std_date = parse_date_time(std_date, c("dmy", "ymd")),
+         record_period = case_when(year(std_date) == 2022 & month(std_date) == 9 ~ "bb22",
+                                   year(std_date) < 1992 ~ "historical",
+                                   T ~ "recent"),
+         occ = 1,
+         year = year(std_date)) %>%
+  dplyr::select(-accepted) %>%
+  left_join(cypher) %>%
+  drop_na(maingroup) %>%
+  filter(!maingroup %in% c("Lampreys", "Protozoan")) %>%
+  mutate(std_date = as.character(std_date),
+         X = row_number())
 
-dALL.cleanup.groups_corrected <- dALL.cleanup.groups_corrected %>%
-  mutate(family = case_when(morphospecies == "Aira elegantissima" ~ "Poaceae",
-                            morphospecies == "Ascocoryne sarcoides" ~ "Gelatinodiscaceae",
-                            morphospecies == "Hemimycena lactea" ~ "Mycenaceae",
-                            morphospecies == "Lejeunea drummondii" ~ "Lejeuneaceae",
-                            morphospecies == "Megalurus gramineus" ~ "Megaluridae",
-                            morphospecies == "Pieris rapae" ~ "Pieridae",
-                            morphospecies == "Trachycarpus fortunei" ~ "Arecaceae",
-                            morphospecies == "Xanthorrhoea australis" ~ "Xanthorrhoeaceae",
-                            morphospecies == "Xanthorrhoea minor" ~ "Xanthorrhoeaceae",
-                            T ~ family),
-         maingroup = case_when(morphospecies == "Aira elegantissima" ~ "Plants",
-                               morphospecies == "Pieris rapae" ~ "Insects",
-                               morphospecies == "Serpula himantioides" ~ "Fungi",
-                               T ~ maingroup),
-         subgroup = case_when(morphospecies %in% c("Adiantum aethiopicum", "Anogramma leptophylla", "Cheilanthes austrotenuifolia", "Pellaea falcata", "Pteris tremula") ~ "Ferns",
-                              morphospecies == "Aira elegantissima" ~ "Monocots",
-                              morphospecies %in% c("Aploactisoma milesii", "Gymnapistes marmoratus", "Lepidotrigla papilio") ~ "Lionfishes and Sculpins",
-                              family %in% c("Ardeiae", "Phalacrocoracidae", "Threskiornithidae") ~ "Waterbirds",
-                              morphospecies %in% c("Borago officinalis", "Cynoglossum australe", "Cynoglossum australe", "Echium plantagineum", "Hackelia latifolia", "Hibbertia acicularis", "Hibbertia australis", "Hibbertia empetrifolia", "Hibbertia fasciculata", "Hibbertia riparia", "Hibbertia sericea", "Myosotis scorpioides", "Myosotis sylvatica", "Pentaglottis sempervirens") ~ "Eudicots",
-                              family %in% c("Gobiidae", "Callionymidae", "Percichthyidae") ~ "Perciformes",
-                              morphospecies == "Ikeda" ~ "Spoon worms",
-                              morphospecies == "Lejeunea drummondii" ~ "Liverworts",
-                              morphospecies == "Morus serrator" ~ "Seabirds",
-                              morphospecies == "Pieris rapae" ~ "Butterflies",
-                              morphospecies == "Serpula himantioides" ~ "Club fungi",
-                              morphospecies == "Trachycarpus fortunei" ~ "Monocots")) %>%
-  filter(!maingroup %in% c("Cartilaginous fishes", "Lampreys"))
-# For future trackability: Esti saved the clean dataset of biodiversity records from 'Biodiversity blitz 2021 R ENVIR v15 13Jul22.RData': write.csv(dALL.cleanup.groups_corrected, file="ALLrecords_cleanup_groups_corrected_for_CESAR_15Nov2022.csv")
-vba <- read_csv("data/AH Cypher v14 15Feb22.csv") 
+councils_full <- unique(dat_all$council)
 
 # generate discrete colour palette
-bb_palette <- tibble(maingroup = sort(unique(dALL.cleanup.groups_corrected$maingroup)),
+bb_palette <- tibble(maingroup = sort(unique(dat_all$maingroup)),
                      col = c("#8C468C",
                              "#ED1B24",
+                             "#404254",
+                             "#51340B",
                              "#2A764F",
                              "#EDC919",
                              "#4C86C6",
                              "#4563AC",
                              "#DBA527",
                              "#51B747",
-                             "dark blue",
+                             "#00008B",
                              "#F7861C"))
 
 # generate gradient colour palettes
-taxa <- c("Arachnids", "Birds", "Frogs", "Fungi", "Insects", "Mammals", "Other invertebrates", "Plants", "Reptiles")
+taxa <- c("Arachnids", "Birds", "Cartilaginous fishes", "Chromists", "Frogs", "Fungi", "Insects", "Mammals", "Other invertebrates", "Plants", "Ray-finned fishes", "Reptiles")
 palettes <- list(Arachnids = c("#ddcedd", "#c9acc9", "#b58ab5", "#a168a0", "#8c468c"),
                  Birds = c("#f0d4d5", "#faadae", "#fc8583", "#f85a55", "#ed1b24"),
+                 `Cartilaginous fishes` = c("#d1d2d6", "#adaeb6", "#8c8e99", "#666877", "#404254"),
+                 Chromists = c("#dad4cc", "#c2b8aa", "#a0907a", "#7c6648", "#51340b"),
                  Frogs = c("#bcdccb", "#97c2ab", "#74a88b", "#508f6d", "#2a764f"),
                  Fungi = c("#f2edd4", "#f1e5ac", "#f0dc83", "#eed357", "#edc919"),
                  Insects = c("#d6e1ee", "#b4cae4", "#93b3da", "#719cd0", "#4c86c6"),
                  Mammals = c("#d6e1ee", "#adc1de", "#87a2ce", "#6582be", "#4563ac"),
                  `Other invertebrates` = c("#ece5d3", "#e8d6aa", "#e4c681", "#e0b657", "#dba527"),
                  Plants = c("#d8ecd6", "#b8dfb3", "#97d290", "#76c56c", "#51b747"),
+                 `Ray-finned fishes` = c("#bdbde1", "#8c8ccb", "#5959b4", "#2b2b9f", "#00008b"),
                  Reptiles = c("#fbebdc", "#fdd3ac", "#fdba7d", "#fba150", "#f7861c"))
 
 # load map of Victoria and reproject to Lambert equal-area
@@ -96,7 +80,8 @@ map_LGA <- map_VIC %>%
   st_transform(crs = 3112) %>%
   filter(NAME %in% str_to_upper(councils_full)) %>%
   rename(council = NAME) %>%
-  mutate(council = case_when(council == "CARDINIA" ~ "CAR",
+  mutate(council = case_when(council == "BAYSIDE" ~ "BSD",
+                             council == "CARDINIA" ~ "CAR",
                              council == "CASEY" ~ "CAS",
                              council == "FRANKSTON" ~ "FRA",
                              council == "GREATER DANDENONG" ~ "GDA",
@@ -123,7 +108,7 @@ LGA_coords <- st_centroid(map_LGA) %>%
 grid_LGA <- read_sf("SpatialData/grid_LGA.shp")
 
 # filter records outside of LGAs
-dALL.cleanup.groups_corrected <- dALL.cleanup.groups_corrected %>%
+dat_all <- dat_all %>%
   select(-council) %>%
   left_join(st_as_sf(., coords = c("decimalLongitude", "decimalLatitude"), crs = "WGS84") %>%
               st_transform(crs = 3112) %>%
@@ -133,9 +118,9 @@ dALL.cleanup.groups_corrected <- dALL.cleanup.groups_corrected %>%
   filter(!is.na(council))
 
 # convert data to grid form
-occ_GRID <- dALL.cleanup.groups_corrected %>%
-  filter(record_period %in% c("recent", "bb21")) %>%
-  select(locality, decimalLatitude, decimalLongitude, identifiedBy, recordID, record_period, keep, maingroup) %>%
+occ_GRID <- dat_all %>%
+  filter(record_period %in% c("recent", "bb22")) %>%
+  select(decimalLatitude, decimalLongitude, recordID, record_period, maingroup) %>%
   st_as_sf(coords = c("decimalLongitude", "decimalLatitude"), crs = st_crs(map_VIC)) %>%
   st_transform(crs = 3112) %>%
   st_intersection(grid_LGA) %>%
@@ -147,7 +132,8 @@ occ_GRID <- dALL.cleanup.groups_corrected %>%
 # load map of green spaces and reproject
 greenspaces <- read_sf("data/VPA_Draft_Open_Space_Data.shp") %>%
   filter(OS_TYPE %in% c("Private open space", "Public open space")) %>%
-  mutate(council = case_when(LGA == "CARDINIA" ~ "CAR",
+  mutate(council = case_when(LGA == "BAYSIDE" ~ "BSD",
+                             LGA == "CARDINIA" ~ "CAR",
                              LGA == "CASEY" ~ "CAS",
                              LGA == "FRANKSTON" ~ "FRA",
                              LGA == "GREATER DANDENONG" ~ "GDA",
@@ -160,9 +146,9 @@ greenspaces <- read_sf("data/VPA_Draft_Open_Space_Data.shp") %>%
   st_transform(st_crs(map_LGA))
 
 # counts per green space
-occ_greenspace <- dALL.cleanup.groups_corrected %>%
-  filter(record_period %in% c("recent", "bb21")) %>%
-  select(locality, decimalLatitude, decimalLongitude, identifiedBy, recordID, record_period, keep, maingroup) %>%
+occ_greenspace <- dat_all %>%
+  filter(record_period %in% c("recent", "bb22")) %>%
+  select(decimalLatitude, decimalLongitude, recordID, record_period, maingroup) %>%
   st_as_sf(coords = c("decimalLongitude", "decimalLatitude"), crs = st_crs(map_VIC)) %>%
   st_transform(crs = 3112) %>%
   st_intersection(greenspaces) %>%
@@ -171,9 +157,9 @@ occ_greenspace <- dALL.cleanup.groups_corrected %>%
   group_by(FID, maingroup, record_period) %>%
   summarise(occ = n())
 
-sp_greenspace <- dALL.cleanup.groups_corrected %>%
-  filter(record_period %in% c("recent", "bb21")) %>%
-  select(locality, decimalLatitude, decimalLongitude, identifiedBy, recordID, record_period, keep, maingroup, morphospecies) %>%
+sp_greenspace <- dat_all %>%
+  filter(record_period %in% c("recent", "bb22")) %>%
+  select(decimalLatitude, decimalLongitude, recordID, record_period, maingroup, morphospecies) %>%
   st_as_sf(coords = c("decimalLongitude", "decimalLatitude"), crs = st_crs(map_VIC)) %>%
   st_transform(crs = 3112) %>%
   st_intersection(greenspaces) %>%
@@ -183,28 +169,50 @@ sp_greenspace <- dALL.cleanup.groups_corrected %>%
   group_by(FID, maingroup, record_period) %>%
   summarise(occ = n())
 
-# load participant data
-participants <- read_csv("data/BB21_participants_FOR_COUNCILS_v1 13July2022.csv")
+# # load participant data
+# participants <- read_csv("data/BB21_participants_FOR_COUNCILS_v1 13July2022.csv")
 
 ## GENERATE DELIVERABLES: TOTAL AND PER COUNCIL
-councils <- c("ALL", unique(dALL.cleanup.groups_corrected$council))
+councils <- c("ALL", unique(dat_all$council))
 
 for (i in councils){
   if(i == "ALL") {
-    dat <- dALL.cleanup.groups_corrected
+    dat <- dat_all
     grid_dat <- grid_LGA
     green_dat <- greenspaces
+    LGA_dat <- map_LGA
   } else {
-    dat <- dALL.cleanup.groups_corrected %>% filter(council == i)
+    dat <- dat_all %>% filter(council == i)
     grid_dat <- grid_LGA %>%
       filter(st_intersects(st_geometry(.), map_LGA %>% filter(council == i), sparse = F)[,1])
     green_dat <- greenspaces %>% filter(council == i)
+    LGA_dat <- map_LGA %>% filter(council == i)
   }
+  
+  # LEGEND MAP
+  p_legend <- map_VIC %>%
+    ggplot() +
+    geom_sf(fill = "grey95", colour = "grey75") +
+    geom_sf(data = greenspaces, fill = "darkolivegreen", colour = NA, alpha = .8) +
+    geom_sf(data = LGA_dat, fill = NA, colour = "black", size = 2) +
+    theme_bw() +
+    coord_sf(crs = 3112,
+             xlim = st_bbox(LGA_dat)[c(1,3)],
+             ylim = st_bbox(LGA_dat)[c(2,4)]) +
+    theme(panel.background = element_rect(fill = 'lightblue'),
+          panel.grid = element_blank())
+  
+  ggsave(paste0("outputs/Maps/legend_map_", i,".png"),
+         plot = p_legend,
+         width = 2000,
+         height = 1500, 
+         units = "px",
+         dpi = 300)
   
   # TABLE 1: species list, Nrecords total/period, FFG/EPBC, origin, common name, etc...
   Splist.Nrecords(dat,
-                  full_dat = dALL.cleanup.groups_corrected,
-                  cypher = vba,
+                  full_dat = dat_all,
+                  cypher = cypher,
                   path = "outputs/Table 1",
                   i)
   
@@ -225,7 +233,7 @@ for (i in councils){
              group = subgroup,
              i)
   
-  ## TABLE 7: most common species from BB21
+  ## TABLE 7: most common species from BB22
   Common.sp(file = paste0("outputs/Table 1/Splist_Nrecords_", i, ".csv"),
             path = "outputs/Table 7",
             i)
@@ -236,7 +244,7 @@ for (i in councils){
               i,
               palette = bb_palette)
   
-  ## TABLE 8: most common group from BB21
+  ## TABLE 8: most common group from BB22
   Common.group(file = paste0("outputs/Table 3/Species_richness_by_maingroup_", i, ".csv"),
                path = "outputs/Table 8",
                group = maingroup,
@@ -259,7 +267,7 @@ for (i in councils){
                  palette = bb_palette,
                  yaxis = T)
   
-  ## TABLE 9: most common subgroups from BB21
+  ## TABLE 9: most common subgroups from BB22
   Common.group(file = paste0("outputs/Table 4/Species_richness_by_subgroup_", i, ".csv"),
                path = "outputs/Table 9",
                group = subgroup,
@@ -282,47 +290,47 @@ for (i in councils){
                  palette = bb_palette,
                  yaxis = T)
   
-  ## TABLE 10: BB21 summaries by greenspace
+  ## TABLE 10: BB22 summaries by greenspace
   Nrecords.GS(dat = green_dat,
               occ_dat = occ_greenspace,
               sp = sp_greenspace,
               path = "outputs/Table 10",
               i)
   
-  ## TABLE 11: BB21 summary of participants
-  Nrecords.PAR(dat,
-               path = "outputs/Table 11",
-               i)
-  
-  ## FIGURE 4
-  Common.group.p(file = paste0("outputs/Table 11/BBparticipants_", i, ".csv"),
-                 path = "outputs/Figure 4",
-                 i,
-                 group = Participant_username,
-                 count = Nrecords_bb21,
-                 palette = bb_palette,
-                 percent = T)
-  
-  ## TABLE 12: BB21 summary for groups of participants
-  BBparticipants_type(dat,
-                      participants %>% select(-c(Nrecords_BB, Perc_records_BB)),
-                      path = "outputs/Table 12",
-                      i)
-  
-  ## FIGURE 5
-  Participant.p(file = paste0("outputs/Table 12/BBparticipants_type_", i, ".csv"),
-                path = "outputs/Figure 5",
-                i)
-  
-  ## TABLE 13: BB21 summary of record bins and n participants
-  BBparticipants_bin(dat,
-                     path = "outputs/Table 13",
-                     i)
-  
-  ## TABLE 14: BB21 summary for (taxa) main groups
-  BBmaingroup(dat,
-              path = "outputs/Table 14",
-              i)
+  # ## TABLE 11: BB22 summary of participants
+  # Nrecords.PAR(dat,
+  #              path = "outputs/Table 11",
+  #              i)
+  # 
+  # ## FIGURE 4
+  # Common.group.p(file = paste0("outputs/Table 11/BBparticipants_", i, ".csv"),
+  #                path = "outputs/Figure 4",
+  #                i,
+  #                group = Participant_username,
+  #                count = Nrecords_bb21,
+  #                palette = bb_palette,
+  #                percent = T)
+  # 
+  # ## TABLE 12: BB22 summary for groups of participants
+  # BBparticipants_type(dat,
+  #                     participants %>% select(-c(Nrecords_BB, Perc_records_BB)),
+  #                     path = "outputs/Table 12",
+  #                     i)
+  # 
+  # ## FIGURE 5
+  # Participant.p(file = paste0("outputs/Table 12/BBparticipants_type_", i, ".csv"),
+  #               path = "outputs/Figure 5",
+  #               i)
+  # 
+  # ## TABLE 13: BB22 summary of record bins and n participants
+  # BBparticipants_bin(dat,
+  #                    path = "outputs/Table 13",
+  #                    i)
+  # 
+  # ## TABLE 14: BB22 summary for (taxa) main groups
+  # BBmaingroup(dat,
+  #             path = "outputs/Table 14",
+  #             i)
   
   ## FIGURE X: cumulative known species
   Trend.sp(file = paste0("outputs/Table 1/Splist_Nrecords_", i, ".csv"),
@@ -360,7 +368,7 @@ for (i in councils){
         basemap = map_LGA,
         path = "outputs/Maps/Total",
         i,
-        period = "bb21")
+        period = "bb22")
   
   Map.p(dat,
         grid_dat,
@@ -368,7 +376,7 @@ for (i in councils){
         basemap = map_LGA,
         path = "outputs/Maps/Total",
         i,
-        period = "bb21",
+        period = "bb22",
         type = "Ndensity")
   
   Map.gs(dat,
@@ -377,7 +385,7 @@ for (i in councils){
          basemap = map_LGA,
          path = "outputs/Maps/Total",
          i,
-         period = "bb21")
+         period = "bb22")
   
   Map.gs(dat,
          green_dat,
@@ -385,7 +393,7 @@ for (i in councils){
          basemap = map_LGA,
          path = "outputs/Maps/Total",
          i,
-         period = "bb21",
+         period = "bb22",
          type = "Greenspace")
   
   # Produce maps per maingroup
@@ -415,7 +423,7 @@ for (i in councils){
           basemap = map_LGA,
           path = paste0("outputs/Maps/", k),
           i,
-          period = "bb21",
+          period = "bb22",
           palette = palettes[[k]])
     
     Map.p(dat %>% filter(maingroup == k),
@@ -424,7 +432,7 @@ for (i in councils){
           basemap = map_LGA,
           path = paste0("outputs/Maps/", k),
           i,
-          period = "bb21",
+          period = "bb22",
           type = "Ndensity",
           palette = palettes[[k]])
     
@@ -434,7 +442,7 @@ for (i in councils){
            basemap = map_LGA,
            path = paste0("outputs/Maps/", k),
            i,
-           period = "bb21",
+           period = "bb22",
            palette = palettes[[k]])
     
     Map.gs(dat %>% filter(maingroup == k),
@@ -443,7 +451,7 @@ for (i in councils){
            basemap = map_LGA,
            path = paste0("outputs/Maps/", k),
            i,
-           period = "bb21",
+           period = "bb22",
            type = "Greenspace",
            palette = palettes[[k]])
   }
@@ -461,8 +469,7 @@ Common.group_Nrecords <- bind_rows(lapply(1:length(councils),
   mutate_if(is.numeric, funs(replace_na(., 0))) %>%
   left_join(LGA_coords %>% bind_rows(tibble(X = min(LGA_coords$X-5000),
                                             Y = max(LGA_coords$Y+5000),
-                                            council = "ALL"))) %>%
-  mutate(`Ray-finned fishes` = 0)
+                                            council = "ALL")))
 
 Common.group_Nsp <- bind_rows(lapply(1:length(councils),
                                      function(x)
@@ -473,8 +480,7 @@ Common.group_Nsp <- bind_rows(lapply(1:length(councils),
   mutate_if(is.numeric, funs(replace_na(., 0))) %>%
   left_join(LGA_coords %>% bind_rows(tibble(X = min(LGA_coords$X-5000),
                                             Y = max(LGA_coords$Y+5000),
-                                            council = "ALL"))) %>%
-  mutate(`Ray-finned fishes` = 0)
+                                            council = "ALL")))
 
 no_zero_groups <- colSums(Common.group_Nrecords[, bb_palette$maingroup])
 no_zero_groups <- no_zero_groups[which(no_zero_groups > 0)]
@@ -482,7 +488,7 @@ no_zero_groups <- no_zero_groups[which(no_zero_groups > 0)]
 plot_pie_map(p_map = map_LGA %>%
                ggplot() +
                geom_sf(fill = "white", colour = "dark grey", inherit.aes = F) +
-               geom_scatterpie(aes(x = X, y = Y, group = council, r = r/1.5),
+               geom_scatterpie(aes(x = X, y = Y, group = council, r = r/2),
                                data = Common.group_Nrecords %>%
                                  mutate(r = rowSums(Common.group_Nrecords[, bb_palette$maingroup])),
                                cols = bb_palette$maingroup, color = NA) +
@@ -495,13 +501,13 @@ plot_pie_map(p_map = map_LGA %>%
                geom_scatterpie_legend(rowSums(Common.group_Nrecords[, bb_palette$maingroup])/3,
                                       x = max(LGA_coords$X)+20000,
                                       y = min(LGA_coords$Y)-5000,
-                                      labeller = function(x) x*1.5) +
-               labs(title = "Bioblitz 2021 No. observations",
+                                      labeller = function(x) x*2) +
+               labs(title = "Bioblitz 2022 No. observations",
                     x = "Longitude",
                     y = "Latitude"),
              dat = Common.group_Nrecords,
              palette = bb_palette,
-             scale.fact = 1/1.5)
+             scale.fact = .5)
 
 ggsave(paste0("outputs/Summary/Common_groups_Nrecords.jpg"), 
        width = 2000,
@@ -526,7 +532,7 @@ plot_pie_map(p_map = map_LGA %>%
                                       x = max(LGA_coords$X)+20000,
                                       y = min(LGA_coords$Y)-5000,
                                       labeller = function(x) round(x/4, - 1)) +
-               labs(title = "Bioblitz 2021 No. species",
+               labs(title = "Bioblitz 2022 No. species",
                     x = "Longitude",
                     y = "Latitude"),
              dat = Common.group_Nsp,
@@ -539,8 +545,9 @@ ggsave(paste0("outputs/Summary/Common_groups_Nsp.jpg"),
        units = "px",
        dpi = 300)
 
-dALL.cleanup.groups_corrected %>% filter(record_period == "bb21") %>% group_by(maingroup, morphospecies) %>% count() %>%
-  filter(!maingroup == "Ray-finned fishes") %>%
+groups_no_ones <- dat_all %>% filter(record_period == "bb22") %>% group_by(maingroup, morphospecies) %>% count() %>% ungroup() %>% count(maingroup) %>% filter(n > 1) %>% pull(maingroup)
+
+dat_all %>% filter(record_period == "bb22") %>% group_by(maingroup, morphospecies) %>% count() %>% filter(maingroup %in% groups_no_ones) %>%
   ggplot(aes(y = reorder(maingroup, n, FUN = median, decreasing = T), x = n, fill = maingroup, colour = maingroup)) +
   stat_density_ridges(quantile_lines = TRUE, quantiles = 2, alpha = .7,
                       jittered_points = TRUE,
@@ -550,12 +557,12 @@ dALL.cleanup.groups_corrected %>% filter(record_period == "bb21") %>% group_by(m
   theme_bw() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   scale_fill_manual(values = as.character(bb_palette %>%
-                                            filter(maingroup %in% names(no_zero_groups)) %>%
+                                            filter(maingroup %in% groups_no_ones) %>%
                                             select(col) %>%
                                             as_vector()),
                     name = "Group") +
   scale_colour_manual(values = as.character(bb_palette %>%
-                                              filter(maingroup %in% names(no_zero_groups)) %>%
+                                              filter(maingroup %in% groups_no_ones) %>%
                                               select(col) %>%
                                               as_vector()),
                       name = "Group") +
@@ -569,7 +576,7 @@ ggsave(paste0("outputs/Summary/Nrecords_per_sp.jpg"),
        units = "px",
        dpi = 300)
 
-dALL.cleanup.groups_corrected %>%
+dat_all %>%
   filter(!record_period == "historical") %>%
   group_by(year, maingroup) %>%
   count(morphospecies) %>%
@@ -593,7 +600,7 @@ ggsave(paste0("outputs/Summary/Nrecords_per_sp_per_year.jpg"),
        units = "px",
        dpi = 300)
 
-dALL.cleanup.groups_corrected %>%
+dat_all %>%
   filter(!record_period == "historical") %>%
   select(year, maingroup, morphospecies) %>%
   unique() %>%
@@ -618,22 +625,11 @@ ggsave(paste0("outputs/Summary/Nsp_per_year.jpg"),
        units = "px",
        dpi = 300)
 
-dat_2021 <- bind_rows(dALL.cleanup.groups_corrected %>%
-                        filter(year == 2021, record_period == "recent") %>%
-                        mutate(eventDate = ymd(str_extract(eventDate, ".*(?=\\T)"))),
-                      dALL.cleanup.groups_corrected %>%
-                        filter(year == 2021, record_period == "bb21", str_detect(eventDate, "GMT")) %>%
-                        rowwise() %>%
-                        mutate(eventDate = paste(str_split(eventDate, " ")[[1]][2], str_split(eventDate, " ")[[1]][3], str_split(eventDate, " ")[[1]][4], sep = "-")) %>%
-                        mutate(eventDate = mdy(eventDate)),
-                      dALL.cleanup.groups_corrected %>%
-                        filter(year == 2021, record_period == "bb21", !str_detect(eventDate, "GMT")) %>%
-                        rowwise() %>%
-                        mutate(eventDate = str_split(eventDate, " ")[[1]][1]) %>%
-                        mutate(eventDate = parse_date_time(eventDate, orders = c("dmy", "ymd"))))
+dat_2022 <- dat_all %>%
+  filter(year == 2022) %>%
+  mutate(eventDate = ymd(std_date))
 
-
-dat_2021 %>%
+dat_2022 %>%
   group_by(eventDate, maingroup, record_period) %>%
   count() %>%
   ggplot(aes(x = eventDate, y = n, colour = maingroup, fill = maingroup, linetype = factor(record_period, labels = c("Bioblitz", "Baseline")))) +
@@ -649,13 +645,13 @@ dat_2021 %>%
        fill = "Group",
        linetype = "Record period")
 
-ggsave(paste0("outputs/Summary/Nrecords_2021.jpg"), 
+ggsave(paste0("outputs/Summary/Nrecords_2022.jpg"), 
        width = 2000,
        height = 1500, 
        units = "px",
        dpi = 300)
 
-dat_2021 %>%
+dat_2022 %>%
   group_by(eventDate, maingroup, record_period, morphospecies) %>%
   count() %>%
   select(-n) %>%
@@ -674,26 +670,16 @@ dat_2021 %>%
        fill = "Group",
        linetype = "Record period")
 
-ggsave(paste0("outputs/Summary/Nsp_aov.jpg"), 
+ggsave(paste0("outputs/Summary/Nsp_2022.jpg"), 
        width = 2000,
        height = 1500, 
        units = "px",
        dpi = 300)
 
-dat_september <- bind_rows(dALL.cleanup.groups_corrected %>%
-                             filter(record_period == "recent") %>%
-                             mutate(eventDate = ymd(str_extract(eventDate, ".*(?=\\T)"))),
-                           dALL.cleanup.groups_corrected %>%
-                             filter(year == 2021, record_period == "bb21", str_detect(eventDate, "GMT")) %>%
-                             rowwise() %>%
-                             mutate(eventDate = paste(str_split(eventDate, " ")[[1]][2], str_split(eventDate, " ")[[1]][3], str_split(eventDate, " ")[[1]][4], sep = "-")) %>%
-                             mutate(eventDate = mdy(eventDate)),
-                           dALL.cleanup.groups_corrected %>%
-                             filter(year == 2021, record_period == "bb21", !str_detect(eventDate, "GMT")) %>%
-                             rowwise() %>%
-                             mutate(eventDate = str_split(eventDate, " ")[[1]][1]) %>%
-                             mutate(eventDate = parse_date_time(eventDate, orders = c("dmy", "ymd")))) %>%
-  mutate(month = month(eventDate),
+dat_september <- dat_all %>%
+  filter(!record_period == "historical") %>%
+  mutate(eventDate = ymd(std_date),
+         month = month(eventDate),
          day = day(eventDate)) %>%
   filter(month == 9)
 
@@ -729,6 +715,8 @@ sep_res <- lsmeans(sep_av, pairwise ~ record_period * maingroup, adjust = "bonfe
 sep_cont <- summary(sep_res[[2]])[!is.na(summary(sep_res[[2]])[,4]),] %>%
   filter(str_count(contrast, "Arachnids") == 2 |
            str_count(contrast, "Birds") == 2 |
+           str_count(contrast, "Cartilaginous fishes") == 2 |
+           str_count(contrast, "Chromists") == 2 |
            str_count(contrast, "Frogs") == 2 |
            str_count(contrast, "Fungi") == 2 |
            str_count(contrast, "Insects") == 2 |
@@ -778,6 +766,8 @@ sep_res <- lsmeans(sep_av, pairwise ~ record_period * maingroup, adjust = "bonfe
 sep_cont <- summary(sep_res[[2]])[!is.na(summary(sep_res[[2]])[,4]),] %>%
   filter(str_count(contrast, "Arachnids") == 2 |
            str_count(contrast, "Birds") == 2 |
+           str_count(contrast, "Cartilaginous fishes") == 2 |
+           str_count(contrast, "Chromists") == 2 |
            str_count(contrast, "Frogs") == 2 |
            str_count(contrast, "Fungi") == 2 |
            str_count(contrast, "Insects") == 2 |
@@ -798,15 +788,26 @@ all_emerging <- read_csv("outputs/Table 2/emerging_ALL.csv") %>%
   full_join(read_csv("outputs/Table 1/Splist_Nrecords_ALL.csv") %>% mutate(extinct = case_when(is.na(first_record_after1991) ~ "Extinct")) %>% drop_na(extinct) %>% count(maingroup) %>% rename(Extinct = n)) %>%
   full_join(read_csv("outputs/Table 1/Splist_Nrecords_ALL.csv") %>% mutate(extant = case_when(is.na(new) & is.na(lazarus) & is.na(new_introduced) & !is.na(first_record_after1991) ~ "Extant")) %>% drop_na(extant) %>% count(maingroup) %>% rename(Extant = n)) %>%
   full_join(read_csv("outputs/Table 1/Splist_Nrecords_ALL.csv") %>% mutate(known = case_when(is.na(new) & is.na(new_introduced) ~ "Known biodversity")) %>% drop_na(known) %>% count(maingroup) %>% rename(`Known biodiversity` = n)) %>% full_join(read_csv("outputs/Table 1/Splist_Nrecords_ALL.csv") %>% mutate(extinct = case_when(is.na(first_record_after1991) ~ "Extinct"), updated = case_when(is.na(extinct) ~ "Updated biodiversity")) %>% drop_na(updated) %>% count(maingroup) %>% rename(`Updated biodiversity` = n)) %>%
-  full_join(read_csv("outputs/Table 1/Splist_Nrecords_ALL.csv") %>% mutate(refound = case_when(is.na(new) & is.na(lazarus) & is.na(new_introduced) & !is.na(first_record_after1991) & most_recent_record == 2021 ~ "Re-found")) %>% drop_na(refound) %>% count(maingroup) %>% rename(`Re-found` = n)) %>%
-  full_join(read_csv("outputs/Table 1/Splist_Nrecords_ALL.csv") %>% mutate(nrefound = case_when(is.na(new) & is.na(lazarus) & is.na(new_introduced) & !is.na(first_record_after1991) & most_recent_record < 2021 ~ "Not re-found")) %>% drop_na(nrefound) %>% count(maingroup) %>% rename(`Not re-found` = n)) %>%
+  full_join(read_csv("outputs/Table 1/Splist_Nrecords_ALL.csv") %>% mutate(refound = case_when(is.na(new) & is.na(lazarus) & is.na(new_introduced) & !is.na(first_record_after1991) & most_recent_record == 2022 ~ "Re-found")) %>% drop_na(refound) %>% count(maingroup) %>% rename(`Re-found` = n)) %>%
+  full_join(read_csv("outputs/Table 1/Splist_Nrecords_ALL.csv") %>% mutate(nrefound = case_when(is.na(new) & is.na(lazarus) & is.na(new_introduced) & !is.na(first_record_after1991) & most_recent_record < 2022 ~ "Not re-found")) %>% drop_na(nrefound) %>% count(maingroup) %>% rename(`Not re-found` = n)) %>%
   full_join(read_csv("outputs/Table 1/Splist_Nrecords_ALL.csv") %>% mutate(pextinct = case_when(is.na(first_record_after1991) | lazarus == "Lazarus" ~ "Possibly extinct")) %>% drop_na(pextinct) %>% count(maingroup) %>% rename(`Possibly extinct` = n)) %>%
   gather(story, n, -maingroup)
+
+origin_emerging <- read_csv("outputs/Table 1/Splist_Nrecords_ALL.csv") %>% drop_na(lazarus) %>% count(Origin) %>% rename(Rediscovered = n) %>%
+  full_join(read_csv("outputs/Table 1/Splist_Nrecords_ALL.csv") %>% drop_na(new) %>% count(Origin) %>% rename(New = n)) %>%
+  full_join(read_csv("outputs/Table 1/Splist_Nrecords_ALL.csv") %>% mutate(extinct = case_when(is.na(first_record_after1991) ~ "Extinct")) %>% drop_na(extinct) %>% count(Origin) %>% rename(Extinct = n)) %>%
+  full_join(read_csv("outputs/Table 1/Splist_Nrecords_ALL.csv") %>% mutate(extant = case_when(is.na(new) & is.na(lazarus) & is.na(new_introduced) & !is.na(first_record_after1991) ~ "Extant")) %>% drop_na(extant) %>% count(Origin) %>% rename(Extant = n)) %>%
+  full_join(read_csv("outputs/Table 1/Splist_Nrecords_ALL.csv") %>% mutate(known = case_when(is.na(new) & is.na(new_introduced) ~ "Known biodversity")) %>% drop_na(known) %>% count(Origin) %>% rename(`Known biodiversity` = n)) %>% full_join(read_csv("outputs/Table 1/Splist_Nrecords_ALL.csv") %>% mutate(extinct = case_when(is.na(first_record_after1991) ~ "Extinct"), updated = case_when(is.na(extinct) ~ "Updated biodiversity")) %>% drop_na(updated) %>% count(Origin) %>% rename(`Updated biodiversity` = n)) %>%
+  full_join(read_csv("outputs/Table 1/Splist_Nrecords_ALL.csv") %>% mutate(refound = case_when(is.na(new) & is.na(lazarus) & is.na(new_introduced) & !is.na(first_record_after1991) & most_recent_record == 2022 ~ "Re-found")) %>% drop_na(refound) %>% count(Origin) %>% rename(`Re-found` = n)) %>%
+  full_join(read_csv("outputs/Table 1/Splist_Nrecords_ALL.csv") %>% mutate(nrefound = case_when(is.na(new) & is.na(lazarus) & is.na(new_introduced) & !is.na(first_record_after1991) & most_recent_record < 2022 ~ "Not re-found")) %>% drop_na(nrefound) %>% count(Origin) %>% rename(`Not re-found` = n)) %>%
+  full_join(read_csv("outputs/Table 1/Splist_Nrecords_ALL.csv") %>% mutate(pextinct = case_when(is.na(first_record_after1991) | lazarus == "Lazarus" ~ "Possibly extinct")) %>% drop_na(pextinct) %>% count(Origin) %>% rename(`Possibly extinct` = n)) %>%
+  gather(story, n, -Origin)
 
 stories <- unique(all_emerging$story)
 
 for (i in stories){
   story <- all_emerging %>% filter(story == i, n > 0)
+  story_origin <- origin_emerging %>% filter(story == i, n > 0) %>% drop_na(Origin)
   
   p_story <- story %>%
     ggplot() +
@@ -825,6 +826,8 @@ for (i in stories){
     
     phylopics <- list(Arachnids = png::readPNG("phylopic/Arachnids.png"),
                       Birds = png::readPNG("phylopic/Birds.png"),
+                      `Cartilaginous fishes` = png::readPNG("phylopic/Cartilaginous fishes.png"),
+                      Chromists = png::readPNG("phylopic/Chromists.png"),
                       Frogs = png::readPNG("phylopic/Frogs.png"),
                       Fungi = png::readPNG("phylopic/Fungi.png"),
                       Insects = png::readPNG("phylopic/Insects.png"),
@@ -858,169 +861,268 @@ for (i in stories){
     }
   }
   
-  ggsave(paste0("outputs/Summary/emerging_", i,".jpg"),
+  p_story_origin <- story_origin %>%
+    ggplot() +
+    geom_arc_bar(aes(x0 = 0, y0 = 0, r0 = 0.6, r = 1,
+                     amount = n,
+                     fill = Origin), stat = "pie", colour = NA) +
+    geom_text(x = 0, y = 0, aes(label = sum(n)), size = 20) +
+    scale_fill_manual(values = c("deepskyblue4", "darkorchid4"), name = "Origin") +
+    coord_fixed() +
+    theme_void() +
+    theme(legend.position = "none")
+  
+  ggsave(paste0("outputs/Summary/emerging_", i,".pdf"),
          plot = p_story,
          width = 2000,
          height = 1500, 
          units = "px",
          dpi = 300)
+  
+  ggsave(paste0("outputs/Summary/origin_", i,".pdf"),
+         plot = p_story_origin,
+         width = 2000,
+         height = 1500, 
+         units = "px",
+         dpi = 300)
 }
 
-## participants summary plots
-participants %>%
-  mutate(Participant_type2 = case_when(Participant_type == "BB organiser" ~ BBorganiser_type, T ~ Participant_type)) %>%
-  ggplot(aes(x = factor(Participant_type, levels = c("General public", "BB organiser")),
-             y = Nrecords_BB,
-             fill = factor(Participant_type2, levels = c("General public", "Council staff", "Members of supporting associations")))) +
-  geom_boxplot() +
-  scale_y_continuous(trans = "log10") +
-  theme_bw() +
-  scale_fill_viridis_d(option = "mako") +
-  labs(x = "",
-       y = "Number records / participant",
-       fill = "") +
-  theme(legend.position = "bottom")
+# ## participants summary plots
+# participants %>%
+#   mutate(Participant_type2 = case_when(Participant_type == "BB organiser" ~ BBorganiser_type, T ~ Participant_type)) %>%
+#   ggplot(aes(x = factor(Participant_type, levels = c("General public", "BB organiser")),
+#              y = Nrecords_BB,
+#              fill = factor(Participant_type2, levels = c("General public", "Council staff", "Members of supporting associations")))) +
+#   geom_boxplot() +
+#   scale_y_continuous(trans = "log10") +
+#   theme_bw() +
+#   scale_fill_viridis_d(option = "mako") +
+#   labs(x = "",
+#        y = "Number records / participant",
+#        fill = "") +
+#   theme(legend.position = "bottom")
+# 
+# ggsave(paste0("outputs/Summary/Nrecords_by_participant_type.jpg"), 
+#        width = 2000,
+#        height = 1500, 
+#        units = "px",
+#        dpi = 300)
+# 
+# dALL.cleanup.groups_corrected %>%
+#   filter(record_period == "bb22") %>%
+#   left_join(participants, by = c("identifiedBy" = "Participant_username")) %>%
+#   mutate(Participant_type2 = case_when(Participant_type == "BB organiser" ~ BBorganiser_type, T ~ Participant_type)) %>%
+#   select(identifiedBy, Participant_type2, Participant_type, morphospecies) %>%
+#   drop_na() %>%
+#   unique() %>%
+#   group_by(identifiedBy, Participant_type2, Participant_type) %>%
+#   count(identifiedBy) %>%
+#   ggplot(aes(x = factor(Participant_type, levels = c("General public", "BB organiser")),
+#              y = n,
+#              fill = factor(Participant_type2, levels = c("General public", "Council staff", "Members of supporting associations")))) +
+#   geom_boxplot() +
+#   scale_y_continuous(trans = "log10") +
+#   theme_bw() +
+#   scale_fill_viridis_d(option = "mako") +
+#   labs(x = "",
+#        y = "Number species / participant",
+#        fill = "") +
+#   theme(legend.position = "bottom")
+# 
+# ggsave(paste0("outputs/Summary/Nsp_by_participant_type.jpg"), 
+#        width = 2000,
+#        height = 1500, 
+#        units = "px",
+#        dpi = 300)
+# 
+# participants %>%
+#   mutate(Participant_type2 = case_when(Participant_type == "BB organiser" ~ BBorganiser_type, T ~ Participant_type)) %>%
+#   arrange(desc(Nrecords_BB)) %>%
+#   mutate(Nrecords_tot = cumsum(Nrecords_BB), Participant_username = reorder(Participant_username, Nrecords_tot)) %>%
+#   ggplot(aes(x = Participant_username,
+#              y = Nrecords_tot,
+#              fill = factor(Participant_type2, levels = c("General public", "Council staff", "Members of supporting associations")))) +
+#   geom_bar(stat = "identity", colour = NA) +
+#   theme_bw() +
+#   scale_fill_viridis_d(option = "mako") +
+#   labs(x = "",
+#        y = "Accumulated number of records",
+#        fill = "") +
+#   theme(axis.ticks.x = element_blank(),
+#         axis.text.x = element_blank(),
+#         panel.grid.major = element_blank(),
+#         panel.grid.minor = element_blank(),
+#         legend.position = "bottom")
+# 
+# ggsave(paste0("outputs/Summary/Nrecords_by_participants.jpg"), 
+#        width = 2000,
+#        height = 1500, 
+#        units = "px",
+#        dpi = 300)
+# 
+# ## assess significance of overlap in sampled species between participant types (are different types of participants recording similar species?) - if null rejected overlap is lower than expected by chance, suggesting examined participant type locates different species
+# 
+# sig_overlap <- list()
+# for (k in c("Total", names(palettes))){
+#   if(k == "Total") {
+#     venn_data <- lapply(c("General public", "Council staff", "Members of supporting associations"),
+#                         function(x)
+#                           dALL.cleanup.groups_corrected %>%
+#                           filter(record_period == "bb22") %>%
+#                           left_join(participants, by = c("identifiedBy" = "Participant_username")) %>%
+#                           mutate(Participant_type2 = case_when(Participant_type == "BB organiser" ~ BBorganiser_type, T ~ Participant_type)) %>%
+#                           select(identifiedBy, Participant_type2, Participant_type, morphospecies) %>%
+#                           drop_na() %>%
+#                           unique() %>%
+#                           filter(Participant_type2 == x) %>%
+#                           pull(morphospecies) %>%
+#                           unique())
+#   } else {
+#     venn_data <- lapply(c("General public", "Council staff", "Members of supporting associations"),
+#                         function(x)
+#                           dALL.cleanup.groups_corrected %>%
+#                           filter(record_period == "bb22", maingroup == k) %>%
+#                           left_join(participants, by = c("identifiedBy" = "Participant_username")) %>%
+#                           mutate(Participant_type2 = case_when(Participant_type == "BB organiser" ~ BBorganiser_type, T ~ Participant_type)) %>%
+#                           select(identifiedBy, Participant_type2, Participant_type, morphospecies) %>%
+#                           drop_na() %>%
+#                           unique() %>%
+#                           filter(Participant_type2 == x) %>%
+#                           pull(morphospecies) %>%
+#                           unique())
+#   }
+#   
+#   names(venn_data) <- c("General public", "BB organiser - Council", "BB organiser - Supporting")
+#   
+#   venn_p <- ggVennDiagram(venn_data,
+#                           label_percent_digit = 1,
+#                           set_size = 3) +
+#     scale_fill_viridis_c(option = "plasma") +
+#     scale_colour_viridis_d(option = "mako") +
+#     labs(fill = "No. species") +
+#     theme(legend.position = "bottom") +
+#     scale_x_continuous(expand = expansion(mult = .2))
+#   
+#   venn_p
+#   
+#   ggsave(paste0("outputs/Summary/Nsp_by_participants_Venn_", k, ",.jpg"), 
+#          width = 2000,
+#          height = 1500, 
+#          units = "px",
+#          dpi = 300)
+#   
+#   venn_groups <- as.numeric(str_remove(str_extract(layer_data(venn_p, 4)$label, ".*\n"), "\n"))
+#   
+#   # calculate significance of overlap
+#   p1 <- calc_enrich(venn_groups,
+#                     group = "General public",
+#                     plot = T)
+#   
+#   p2 <- calc_enrich(venn_groups,
+#                     group = "BB organiser - Council",
+#                     plot = T)
+#   
+#   p3 <- calc_enrich(venn_groups,
+#                     group = "BB organiser - Supporting",
+#                     plot = T)
+#   
+#   cowplot::plot_grid(p1$plot, p2$plot, p3$plot,
+#                      ncol = 1)
+#   
+#   ggsave(paste0("outputs/Summary/Nsp_by_participants_overlap_", k, ",.jpg"), 
+#          width = 2000,
+#          height = 1500, 
+#          units = "px",
+#          dpi = 300)
+#   
+#   sig_overlap[[k]] <- tibble(participant_type = c("General public", "BB organiser - Council", "BB organiser - Supporting"),
+#                              maingroup = rep(k, 3),
+#                              p = c(p1$p, p2$p, p3$p)) %>%
+#     mutate(sig = case_when(p <= 0.001 ~ "***",
+#                            p <= 0.01 ~ "**",
+#                            p <= 0.05 ~ "*",
+#                            p > 0.05 ~ "n.s."))
+# }
+# 
+# bind_rows(sig_overlap) %>% write_csv("outputs/Summary/Nsp_overlap_hypergeometric_tests.csv")
 
-ggsave(paste0("outputs/Summary/Nrecords_by_participant_type.jpg"), 
-       width = 2000,
-       height = 1500, 
-       units = "px",
-       dpi = 300)
 
-dALL.cleanup.groups_corrected %>%
-  filter(record_period == "bb21") %>%
-  left_join(participants, by = c("identifiedBy" = "Participant_username")) %>%
-  mutate(Participant_type2 = case_when(Participant_type == "BB organiser" ~ BBorganiser_type, T ~ Participant_type)) %>%
-  select(identifiedBy, Participant_type2, Participant_type, morphospecies) %>%
-  drop_na() %>%
-  unique() %>%
-  group_by(identifiedBy, Participant_type2, Participant_type) %>%
-  count(identifiedBy) %>%
-  ggplot(aes(x = factor(Participant_type, levels = c("General public", "BB organiser")),
-             y = n,
-             fill = factor(Participant_type2, levels = c("General public", "Council staff", "Members of supporting associations")))) +
-  geom_boxplot() +
-  scale_y_continuous(trans = "log10") +
-  theme_bw() +
-  scale_fill_viridis_d(option = "mako") +
-  labs(x = "",
-       y = "Number species / participant",
-       fill = "") +
-  theme(legend.position = "bottom")
+# update events
+dat_events <- read_csv("data/LGAs_Events_dataset.csv") %>%
+  mutate(lga = case_when(lga == "bayside" ~ "BSD",
+                         lga == "cardinia" ~ "CAR",
+                         lga == "casey" ~ "CAS",
+                         lga == "frankston" ~ "FRA",
+                         lga == "gd" ~ "GDA",
+                         lga == "kingston" ~ "KIN",
+                         lga == "knox" ~ "KNO",
+                         lga == "monash" ~ "MON",
+                         lga == "mps" ~ "MPE",
+                         lga == "yr" ~  "YRA"))
 
-ggsave(paste0("outputs/Summary/Nsp_by_participant_type.jpg"), 
-       width = 2000,
-       height = 1500, 
-       units = "px",
-       dpi = 300)
+dat_events_unique <- dat_events %>%
+  select(event_year, event_description, start_date, end_date) %>%
+  unique()
 
-participants %>%
-  mutate(Participant_type2 = case_when(Participant_type == "BB organiser" ~ BBorganiser_type, T ~ Participant_type)) %>%
-  arrange(desc(Nrecords_BB)) %>%
-  mutate(Nrecords_tot = cumsum(Nrecords_BB), Participant_username = reorder(Participant_username, Nrecords_tot)) %>%
-  ggplot(aes(x = Participant_username,
-             y = Nrecords_tot,
-             fill = factor(Participant_type2, levels = c("General public", "Council staff", "Members of supporting associations")))) +
-  geom_bar(stat = "identity", colour = NA) +
-  theme_bw() +
-  scale_fill_viridis_d(option = "mako") +
-  labs(x = "",
-       y = "Accumulated number of records",
-       fill = "") +
-  theme(axis.ticks.x = element_blank(),
-        axis.text.x = element_blank(),
-        panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        legend.position = "bottom")
+dat_all$event_description <- "Baseline"
 
-ggsave(paste0("outputs/Summary/Nrecords_by_participants.jpg"), 
-       width = 2000,
-       height = 1500, 
-       units = "px",
-       dpi = 300)
+for(i in 1:nrow(dat_events_unique)){
+  event_interval <- interval(dmy(dat_events_unique[i,3]), dmy(dat_events_unique[i,4]))
+  event_year <- as.character(dat_events_unique[i,1])
+  event_d <- as.character(dat_events_unique[i,2])
+  
+  dat_all <- dat_all %>%
+    mutate(record_period = case_when(ymd(std_date) %within% event_interval ~ event_year,
+                                     T ~ record_period),
+           event_description = case_when(ymd(std_date) %within% event_interval ~ event_d,
+                                         T ~ event_description)) 
+}
 
-## assess significance of overlap in sampled species between participant types (are different types of participants recording similar species?) - if null rejected overlap is lower than expected by chance, suggesting examined participant type locates different species
+dat_events_lga <- dat_events %>%
+  select(lga, event_year) %>%
+  drop_na(lga) %>%
+  mutate(event_year = factor(event_year, levels = c("gsb_20", "cnc_21", "bb_21", "gsb_21", "cnc_22", "bb_22", "gsb_22"))) %>%
+  group_by(lga) %>%
+  arrange(event_year) %>%
+  mutate(event_number = row_number()) %>%
+  ungroup() %>%
+  mutate(event_number = paste0("event_", letters[event_number])) %>%
+  rename(council = lga,
+         record_period = event_year)
 
-sig_overlap <- list()
-for (k in c("Total", names(palettes))){
-  if(k == "Total") {
-    venn_data <- lapply(c("General public", "Council staff", "Members of supporting associations"),
-                        function(x)
-                          dALL.cleanup.groups_corrected %>%
-                          filter(record_period == "bb21") %>%
-                          left_join(participants, by = c("identifiedBy" = "Participant_username")) %>%
-                          mutate(Participant_type2 = case_when(Participant_type == "BB organiser" ~ BBorganiser_type, T ~ Participant_type)) %>%
-                          select(identifiedBy, Participant_type2, Participant_type, morphospecies) %>%
-                          drop_na() %>%
-                          unique() %>%
-                          filter(Participant_type2 == x) %>%
-                          pull(morphospecies) %>%
-                          unique())
-  } else {
-    venn_data <- lapply(c("General public", "Council staff", "Members of supporting associations"),
-                        function(x)
-                          dALL.cleanup.groups_corrected %>%
-                          filter(record_period == "bb21", maingroup == k) %>%
-                          left_join(participants, by = c("identifiedBy" = "Participant_username")) %>%
-                          mutate(Participant_type2 = case_when(Participant_type == "BB organiser" ~ BBorganiser_type, T ~ Participant_type)) %>%
-                          select(identifiedBy, Participant_type2, Participant_type, morphospecies) %>%
-                          drop_na() %>%
-                          unique() %>%
-                          filter(Participant_type2 == x) %>%
-                          pull(morphospecies) %>%
-                          unique())
+dat_events_lga <- dat_events_lga %>%
+  full_join(dat_events %>%
+              select(lga, event_year) %>%
+              rename(council = lga,
+                     record_period = event_year) %>%
+              expand(council, record_period)) %>%
+  drop_na(council) %>%
+  mutate(record_period = factor(record_period, levels = c("gsb_20", "inter_gsb20_cnc21", "cnc_21", "inter_cnc21_bb21", "bb_21", "inter_bb21_gsb21", "gsb_21", "inter_gsb21_cnc22", "cnc_22", "inter_cnc22_bb22", "bb_22", "inter_bb22_gsb22", "gsb_22"))) %>%
+  arrange(council, record_period) %>%
+  left_join(dat_events_lga) %>%
+  group_by(council, event_number) %>%
+  ungroup()
+
+council_events <- list()
+for (i in unique(dat_events_lga$council)){
+  council_events[[i]] <- dat_events_lga %>%
+    filter(council == i)
+  
+  index = 1
+  for (k in 1:nrow(council_events[[i]])){
+    if (is.na(council_events[[i]][k, 3])) {
+      council_events[[i]][k, 3] <- paste0("interperiod_", letters[index])
+    } else {
+      if (k == 1) {next}
+      index = index + 1
+    }
   }
-  
-  names(venn_data) <- c("General public", "BB organiser - Council", "BB organiser - Supporting")
-  
-  venn_p <- ggVennDiagram(venn_data,
-                          label_percent_digit = 1,
-                          set_size = 3) +
-    scale_fill_viridis_c(option = "plasma") +
-    scale_colour_viridis_d(option = "mako") +
-    labs(fill = "No. species") +
-    theme(legend.position = "bottom") +
-    scale_x_continuous(expand = expansion(mult = .2))
-  
-  venn_p
-  
-  ggsave(paste0("outputs/Summary/Nsp_by_participants_Venn_", k, ",.jpg"), 
-         width = 2000,
-         height = 1500, 
-         units = "px",
-         dpi = 300)
-  
-  venn_groups <- as.numeric(str_remove(str_extract(layer_data(venn_p, 4)$label, ".*\n"), "\n"))
-  
-  # calculate significance of overlap
-  p1 <- calc_enrich(venn_groups,
-                    group = "General public",
-                    plot = T)
-  
-  p2 <- calc_enrich(venn_groups,
-                    group = "BB organiser - Council",
-                    plot = T)
-  
-  p3 <- calc_enrich(venn_groups,
-                    group = "BB organiser - Supporting",
-                    plot = T)
-  
-  cowplot::plot_grid(p1$plot, p2$plot, p3$plot,
-                     ncol = 1)
-  
-  ggsave(paste0("outputs/Summary/Nsp_by_participants_overlap_", k, ",.jpg"), 
-         width = 2000,
-         height = 1500, 
-         units = "px",
-         dpi = 300)
-  
-  sig_overlap[[k]] <- tibble(participant_type = c("General public", "BB organiser - Council", "BB organiser - Supporting"),
-                             maingroup = rep(k, 3),
-                             p = c(p1$p, p2$p, p3$p)) %>%
-    mutate(sig = case_when(p <= 0.001 ~ "***",
-                           p <= 0.01 ~ "**",
-                           p <= 0.05 ~ "*",
-                           p > 0.05 ~ "n.s."))
 }
 
-bind_rows(sig_overlap) %>% write_csv("outputs/Summary/Nsp_overlap_hypergeometric_tests.csv")
+dat_events_lga <- bind_rows(council_events)
+
+dat_all <- dat_all %>%
+  left_join(dat_events_lga) %>%
+  mutate(event_number = replace_na(event_number, "interperiod"))
+
+dat_all %>% write_csv("data/Records w Events v1 31Mar23.csv")
