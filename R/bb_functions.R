@@ -143,8 +143,11 @@ Nrecords.GS <- function(dat, occ_dat, sp, path, i){
     dat %>%
     as_tibble() %>%
     select(FID, PARK_NAME) %>%
+    drop_na() %>%
     left_join(occ_dat %>% filter(record_period == "bb22")) %>%
-    drop_na(maingroup) %>%
+    drop_na(maingroup, PARK_NAME) %>%
+    group_by(PARK_NAME, maingroup, record_period) %>%
+    summarise(occ = sum(occ)) %>%
     mutate(maingroup = case_when(maingroup == "Arachnids" ~ "Nrecords_ARA",
                                  maingroup == "Birds" ~ "Nrecords_BIR",
                                  maingroup == "Cartilaginous fishes" ~ "Nrecords_CAF",
@@ -159,14 +162,17 @@ Nrecords.GS <- function(dat, occ_dat, sp, path, i){
                                  maingroup == "Reptiles" ~ "Nrecords_REP")) %>%
     spread(maingroup, occ) %>%
     rename(Greenspace_name = PARK_NAME) %>%
-    select(-FID) %>%
+    mutate_if(is.numeric, function(x) replace_na(x, 0)) %>%
     rowwise() %>%
     mutate(Nrecords_total = sum(across(where(is.numeric)))) %>%
     left_join(dat %>%
                 as_tibble() %>%
                 select(FID, PARK_NAME) %>%
-                left_join(sp %>% filter(record_period == "bb22")) %>%
-                drop_na(maingroup) %>%
+                drop_na() %>%
+                left_join(occ_dat %>% filter(record_period == "bb22")) %>%
+                drop_na(maingroup, PARK_NAME) %>%
+                group_by(PARK_NAME, maingroup, record_period) %>%
+                summarise(occ = sum(occ)) %>%
                 mutate(maingroup = case_when(maingroup == "Arachnids" ~ "Nsp_ARA",
                                              maingroup == "Birds" ~ "Nsp_BIR",
                                              maingroup == "Cartilaginous fishes" ~ "Nsp_CAF",
@@ -181,7 +187,8 @@ Nrecords.GS <- function(dat, occ_dat, sp, path, i){
                                              maingroup == "Reptiles" ~ "Nsp_REP")) %>%
                 spread(maingroup, occ) %>%
                 rename(Greenspace_name = PARK_NAME) %>%
-                select(-FID) %>%
+                mutate_if(is.numeric, function(x) replace_na(x, 0)) %>%
+                mutate_if(is.numeric, function(x) ifelse(x > 0, 1, 0)) %>%
                 rowwise() %>%
                 mutate(Nsp_total = sum(across(where(is.numeric)))))
   
@@ -479,11 +486,12 @@ Map.p <- function(dat, grid_dat, occ_dat, basemap, path, i, period, type = "Nrec
       coord_sf(xlim = st_bbox(grid_dat)[c(1,3)],
                ylim = st_bbox(grid_dat)[c(2,4)]) +
       theme(panel.background = element_rect(fill = 'lightblue'),
-            panel.grid = element_blank())
+            panel.grid = element_blank(),
+            axis.text.x = element_text(angle = 45, hjust = 1))
     
     if(is.null(palette))
-      p <- p + scale_fill_viridis_c(na.value = NA, option = "plasma", name = "No. of records") else
-        p <- p + scale_fill_gradientn(na.value = NA, colours = palette, name = "No. of records")
+      p <- p + scale_fill_viridis_c(trans = "log10", na.value = NA, option = "plasma", name = "No. of records") else
+        p <- p + scale_fill_gradientn(trans = "log10", na.value = NA, colours = palette, name = "No. of records")
       
       ggsave(paste0(path, "/", type, "_", i, "_", period, ".jpg"),
              plot = p,
@@ -494,7 +502,7 @@ Map.p <- function(dat, grid_dat, occ_dat, basemap, path, i, period, type = "Nrec
   } else if(type == "Ndensity") {
     kde <- tryCatch(st_kde(dat %>%
                              filter(record_period == period) %>%
-                             select(locality, decimalLatitude, decimalLongitude, identifiedBy, recordID, record_period, keep, maingroup) %>%
+                             select(decimalLatitude, decimalLongitude, identifiedBy, recordID, record_period, maingroup) %>%
                              st_as_sf(coords = c("decimalLongitude", "decimalLatitude"), crs = 7844) %>%
                              st_transform(crs = 3112)),
                     error = function(e) e)
@@ -513,7 +521,8 @@ Map.p <- function(dat, grid_dat, occ_dat, basemap, path, i, period, type = "Nrec
                  ylim = st_bbox(grid_dat)[c(2,4)]) +
         ggtitle(str_to_title(period)) +
         theme(panel.background = element_rect(fill = 'lightblue'),
-              panel.grid = element_blank())
+              panel.grid = element_blank(),
+              axis.text.x = element_text(angle = 45, hjust = 1))
       
       if(is.null(palette))
         p <- p + scale_fill_viridis_d(na.value = NA, option = "plasma", name = "Density of records") else
@@ -550,9 +559,9 @@ Map.gs <- function(dat, green_dat, occ_dat, basemap, path, i, period, type = "Re
       theme_bw() +
       coord_sf(xlim = st_bbox(grid_dat)[c(1,3)],
                ylim = st_bbox(grid_dat)[c(2,4)]) +
-      ggtitle("Spatial location of records") +
       theme(panel.background = element_rect(fill = 'lightblue'),
-            panel.grid = element_blank())
+            panel.grid = element_blank(),
+            axis.text.x = element_text(angle = 45, hjust = 1))
   } else if (type == "Greenspace") {
     p <- 
       green_dat %>%
@@ -567,9 +576,9 @@ Map.gs <- function(dat, green_dat, occ_dat, basemap, path, i, period, type = "Re
       theme_bw() +
       coord_sf(xlim = st_bbox(grid_dat)[c(1,3)],
                ylim = st_bbox(grid_dat)[c(2,4)]) +
-      ggtitle("Records by urban greenspace") +
       theme(panel.background = element_rect(fill = 'lightblue'),
-            panel.grid = element_blank())
+            panel.grid = element_blank(),
+            axis.text.x = element_text(angle = 45, hjust = 1))
     
     if(is.null(palette))
       p <- p + scale_fill_viridis_c(na.value = NA, option = "plasma", name = "No. of records") else
